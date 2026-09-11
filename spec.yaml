@@ -9,29 +9,20 @@ description: >-
 licenses:
   - Apache-2.0
 
-# The Mend service-user key is the only secret. The proxy manages it: the
-# container sees MEND_USER_KEY=proxy-managed and never the real value. The
-# non-secret coordinates (MEND_URL default below, plus MEND_EMAIL /
-# MEND_ORGANIZATION supplied at run time) tell the CLI which tenant to reach.
-credentials:
-  - service: mend
-    description: "Mend service-user key (MEND_USER_KEY) used by the Mend CLI"
-    required: false
-    apiKey:
-      name: MEND_USER_KEY
-      inject:
-        - domain: saas.mend.io
-          scheme: bearer
-        - domain: api-saas.mend.io
-          scheme: bearer
+# No proxy-managed credential is declared on purpose. The Mend CLI performs its
+# own login handshake (email + user key -> token, stored in
+# ~/.mend/config/settings.json). Declaring an apiKey inject on *.mend.io would
+# make the sbx proxy TLS-intercept those hosts to add an Authorization header,
+# which corrupts Mend's login and yields "Unauthorized" inside the sandbox
+# (the same credentials work on the host, where no proxy is in the path).
+# So the kit only opens egress and lets the CLI authenticate itself — see the
+# Authentication section in agentInstructions and docs/CREDENTIALS.md.
 
 permissions:
   network:
     allow:
       - "*.mend.io"            # downloads / saas / api-saas / app / saas-eu (single label)
-      - mend.io                # apex — proxy validation
-      - saas.mend.io           # credential inject domain (default SaaS API)
-      - api-saas.mend.io       # credential inject domain (API access)
+      - mend.io                # apex
 
 environment:
   variables:
@@ -80,15 +71,38 @@ agentInstructions:
 
     ## Authentication
 
-    The CLI reads these environment variables:
-    - `MEND_URL` — tenant URL (default `https://saas.mend.io`, preset by this kit).
-    - `MEND_EMAIL` — service-user (or personal) email.
-    - `MEND_USER_KEY` — service-user key. **Proxy-managed**: inside the container
-      this is the sentinel `proxy-managed`; the sbx proxy swaps in the real key
-      on outbound requests to Mend. Bind it in `~/.config/sbx/credentials.yaml`.
-    - `MEND_ORGANIZATION` — organization UUID (optional; needed for some scopes).
+    The CLI authenticates itself (the sbx proxy does NOT inject a credential —
+    it only allows egress to `*.mend.io`). Two ways that work inside the sandbox:
 
-    `MEND_EMAIL` and `MEND_ORGANIZATION` are not secrets — pass them at run time
-    (e.g. `sbx run <agent> -e MEND_EMAIL=... -e MEND_ORGANIZATION=... ...`).
+    ### 1. `mend auth login` — manual credentials (recommended for SSO orgs)
+
+    ```bash
+    mend auth login
+    #   Select environment:  https://saas.mend.io
+    #   Authenticate:        Enter credentials manually
+    #   User Email:          <service-user email>
+    #   User Key:            <service-user key>
+    ```
+
+    Use a **Service User** (Mend → Settings → Service Users) rather than a
+    personal key — SSO-enforced orgs typically reject personal user keys with
+    "Unauthorized". The browser-login option does NOT work headless (its
+    `127.0.0.1` callback can't reach the CLI from a host browser), so choose
+    "Enter credentials manually". The token is stored in
+    `~/.mend/config/settings.json`.
+
+    ### 2. Environment variables (service user)
+
+    ```bash
+    sbx run claude --kit <this-kit> \
+      -e MEND_URL="https://saas.mend.io" \
+      -e MEND_EMAIL="<service-user email>" \
+      -e MEND_USER_KEY="<service-user key>" \
+      -e MEND_ORGANIZATION="<org uuid>" .
+    ```
+
+    `MEND_URL` is preset by this kit. `MEND_EMAIL` / `MEND_ORGANIZATION` are not
+    secrets. `MEND_USER_KEY` is passed as-is (there is no proxy masking), so it
+    is readable inside the sandbox — use a scoped Service User key.
 
     Verify connectivity: `mend connectivity --mend-url="$MEND_URL"`.

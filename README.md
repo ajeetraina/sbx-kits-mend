@@ -13,10 +13,13 @@ ability to run Mend AI security scans against the code it is working on.
 
 <img src="./assets/architecture.png" alt="Mend AI Security sbx kit architecture" width="100%" />
 
-The Mend CLI runs inside the sandbox and scans the workspace in place. Your
-`MEND_USER_KEY` stays **proxy-managed**: inside the container it is only the
-sentinel `proxy-managed`, and the sbx credential proxy swaps in the real key on
-the wire — so the key never enters the sandbox. An egress allow-list bounds
+The Mend CLI runs inside the sandbox and scans the workspace in place. It
+performs **its own login handshake** (email + user key → token stored in
+`~/.mend/config/settings.json`), so the kit deliberately declares **no
+proxy-managed credential** — the sbx proxy simply *tunnels* `*.mend.io`
+transparently. (Injecting a credential would make the proxy TLS-intercept those
+hosts, which corrupts Mend's login and fails with `Unauthorized` — see
+[`docs/CREDENTIALS.md`](docs/CREDENTIALS.md).) An egress allow-list bounds
 outbound traffic to `*.mend.io` (CLI download/auto-update plus auth and AI-BOM
 upload), and everything else is denied.
 
@@ -26,10 +29,9 @@ upload), and everything else is denied.
 - `mend ai scan` — AI usage discovery + AI-BOM generation.
 - Egress allow-list for `*.mend.io` so scans and CLI auto-update work under a
   `deny-all` network policy.
-- A proxy-managed `MEND_USER_KEY` credential — the container never sees the raw
-  key.
 - A `MEND_URL` default (`https://saas.mend.io`) plus agent instructions on how
-  to run scans and authenticate.
+  to run scans and authenticate (via the CLI's own `mend auth login` or env
+  vars — the kit injects no credential of its own).
 
 The same CLI also provides `mend dep` (SCA), `mend code` (SAST), and
 `mend image` (container) scanning.
@@ -61,27 +63,31 @@ sbx run claude --kit ./sbx-kits-mend/ .
 
 ## Authentication
 
-The Mend CLI authenticates with a service user. Provide these when you launch
-the sandbox:
+The Mend CLI authenticates **itself** — the kit injects no credential; it only
+opens egress to `*.mend.io`. Use a **Service User** (Mend → Settings → Service
+Users), not a personal key: SSO-enforced orgs typically reject personal user
+keys with `Unauthorized`.
 
 | Variable | Secret? | Notes |
 |---|---|---|
 | `MEND_URL` | no | Tenant URL. Preset to `https://saas.mend.io`; override for EU/IL/legacy (e.g. `https://saas-eu.mend.io`). |
-| `MEND_EMAIL` | no | Service-user (or personal) email. |
-| `MEND_USER_KEY` | **yes** | Service-user key. Proxy-managed — bind it in `~/.config/sbx/credentials.yaml`. |
+| `MEND_EMAIL` | no | Service-user email. |
+| `MEND_USER_KEY` | **yes** | Service-user key. Passed as-is (no proxy masking) — it is readable in the sandbox, so scope it to a Service User. |
 | `MEND_ORGANIZATION` | no | Organization UUID (needed for some scopes). |
 
-`MEND_USER_KEY` is delivered through the sbx credential proxy: in the container
-it is the literal `proxy-managed`, and the proxy swaps in the real key on
-outbound requests to Mend. Bind it under `service: mend` in your
-`~/.config/sbx/credentials.yaml`.
+**Option A — `mend auth login` (recommended).** Inside the sandbox, run
+`mend auth login`, pick your environment, and choose **"Enter credentials
+manually"** (the browser option can't complete headless — its `127.0.0.1`
+callback never reaches the CLI from a host browser). Enter the Service User
+email + key; the token is cached in `~/.mend/config/settings.json`.
 
-Pass the non-secret coordinates at run time, for example:
+**Option B — environment variables** at launch:
 
 ```bash
 sbx run claude \
   --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
   -e MEND_EMAIL="svc@example.com" \
+  -e MEND_USER_KEY="<service-user-key>" \
   -e MEND_ORGANIZATION="<org-uuid>" .
 ```
 
@@ -100,19 +106,21 @@ mend ai scan --directory .                 # AI security scan + AI-BOM
 
 ## Example: scan a project for AI usage
 
-Bind your Mend service-user key once, launch a Claude sandbox with the kit, and
-run an AI security scan on the project in the current directory:
+Launch a Claude sandbox with the kit against the project you want to scan, then
+authenticate the CLI and run the AI scan:
 
 ```bash
-# 1. Bind the Mend service-user key (proxy-managed; stored host-side, once)
-sbx secret set mend
-
-# 2. Launch a sandbox with the kit, mounting the project you want to scan
+# 1. Launch a sandbox with the kit, mounting the project to scan.
+#    Pass Service User creds as env vars (Option B)…
 sbx run claude \
   --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
   -e MEND_EMAIL="svc@example.com" \
+  -e MEND_USER_KEY="<service-user-key>" \
   -e MEND_ORGANIZATION="<org-uuid>" \
   ~/code/my-ai-app
+
+# 2. …or, instead of env vars, log in interactively inside the sandbox (Option A):
+#    mend auth login   ->   "Enter credentials manually"
 
 # 3. Inside the sandbox: verify connectivity, then scan
 mend connectivity --mend-url="$MEND_URL"

@@ -1,9 +1,29 @@
-# Mend CLI credential design — findings & drafts
+# Mend CLI credential design — findings & resolution
 
-Status: **investigation**. This documents how the Mend CLI authenticates, why
-the kit's shipped `apiKey` credential is likely ineffective, and two candidate
-redesigns. Nothing here is wired into `spec.yaml` yet — the `‹CONFIRM›` values
-must be captured from a completed `mend auth login` first.
+Status: **resolved**. The kit ships **no proxy-managed credential** — it only
+opens egress to `*.mend.io` and lets the Mend CLI authenticate itself.
+
+## Resolution (what shipped)
+
+Confirmed by live testing (host vs. sandbox, same credentials):
+
+- The proxy-managed `apiKey` block **broke** auth. Declaring `apiKey.inject` on
+  `*.mend.io` makes the sbx proxy **TLS-intercept** those hosts to add an
+  `Authorization` header; that mangles Mend's login handshake and returns
+  `Unauthorized` **inside the sandbox**, while the *same* credentials succeed on
+  the **host** (no proxy in the path). → The `credentials:` block was removed.
+- **Working auth inside the sandbox:** `mend auth login` → **"Enter credentials
+  manually"** with a **Service User** email + key. The token is cached in
+  `~/.mend/config/settings.json`. Env vars (`MEND_EMAIL` / `MEND_USER_KEY` /
+  `MEND_ORGANIZATION`) also work when the CLI consumes them via login.
+- **Personal user keys are rejected under SSO** (`Unauthorized`) — Docker's org
+  is SSO-enforced, so a Service User is required.
+- **Browser login does not work headless**: its callback is `http://127.0.0.1:<port>`,
+  which the CLI listens on *inside* the sandbox, but the browser runs on the
+  host — the redirect never reaches the CLI. Use "Enter credentials manually".
+
+The rest of this document is the investigation trail that led there, kept for
+reference (and in case a future `sbx` gains body-level secret swapping).
 
 ## What the CLI actually does (evidence from the binary, v26.8.2-hf1)
 
