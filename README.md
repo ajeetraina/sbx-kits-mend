@@ -98,22 +98,46 @@ mend connectivity --mend-url="$MEND_URL"   # verify auth/network
 mend ai scan --directory .                 # AI security scan + AI-BOM
 ```
 
-## Architecture support
+## Example: scan a project for AI usage
 
-The install step detects the sandbox architecture (`uname -m`) and downloads
-the matching Mend CLI binary:
+Bind your Mend service-user key once, launch a Claude sandbox with the kit, and
+run an AI security scan on the project in the current directory:
 
-| Sandbox arch | Binary |
-|---|---|
-| `x86_64` (Intel/AMD, most CI/cloud) | `https://downloads.mend.io/cli/linux_amd64/mend` |
-| `aarch64` / `arm64` (Apple Silicon microVMs) | `https://downloads.mend.io/cli/linux_arm64/mend` |
+```bash
+# 1. Bind the Mend service-user key (proxy-managed; stored host-side, once)
+sbx secret set mend
 
-> **Note:** Mend's [download docs](https://docs.mend.io/platform/latest/download-the-mend-cli)
-> list only `linux_amd64` and state that Linux arm64 is "not currently
-> supported", but `downloads.mend.io/cli/linux_arm64/mend` in fact serves a real
-> native aarch64 executable, which this kit uses on arm64 hosts. If Mend ever
-> withdraws that undocumented build, arm64 installs would fail — pin to an amd64
-> host in that case.
+# 2. Launch a sandbox with the kit, mounting the project you want to scan
+sbx run claude \
+  --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
+  -e MEND_EMAIL="svc@example.com" \
+  -e MEND_ORGANIZATION="<org-uuid>" \
+  ~/code/my-ai-app
+
+# 3. Inside the sandbox: verify connectivity, then scan
+mend connectivity --mend-url="$MEND_URL"
+mend ai scan --directory . --scope "MyOrg//my-ai-app"
+```
+
+Sample output — the AI-BOM lists the models, frameworks, and system prompts the
+scanner discovered:
+
+```text
+Mend AI scan running...
+✓ Detected AI frameworks:  langchain, openai-python
+✓ Detected models:         gpt-4o (OpenAI), all-MiniLM-L6-v2 (Hugging Face)
+✓ Detected system prompts: 3 files
+✓ AI-BOM uploaded to MyOrg//my-ai-app
+```
+
+Or, to have the coding agent drive the scan for you, just ask it in the session:
+
+```text
+> Run a Mend AI security scan on this repo and summarize the AI-BOM.
+```
+
+The agent reads this kit's instructions and runs `mend ai scan` on the
+workspace, then summarizes the discovered AI components and risks.
 
 ## License
 
