@@ -1,6 +1,7 @@
 # Mend AI Security
 
-A Docker Sandboxes **mixin** that installs the [Mend CLI](https://docs.mend.io/platform/latest/download-the-mend-cli)
+A [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) **`kind: mixin`**
+kit that installs the [Mend CLI](https://docs.mend.io/platform/latest/download-the-mend-cli)
 and enables **AI-security scanning** inside the sandbox — discover AI models,
 frameworks, and system prompts in your workspace ("Shadow AI") and generate an
 **AI-BOM** (AI Bill of Materials) with `mend ai scan`.
@@ -68,17 +69,18 @@ reference form:
 sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest .
 ```
 
-**Git URL:**
+**Git URL (the kit lives at the repo root):**
 
 ```bash
 sbx run claude \
-  --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>&dir=mend-ai-security" .
+  --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>" .
 ```
 
-**Local path:**
+**Local clone:**
 
 ```bash
-sbx run claude --kit ./mend-ai-security/ .
+git clone https://github.com/ajeetraina/sbx-kits-mend.git
+sbx run claude --kit ./sbx-kits-mend/ .
 ```
 
 ## Authentication
@@ -102,14 +104,14 @@ Pass the non-secret coordinates at run time, for example:
 
 ```bash
 sbx run claude \
-  --kit docker.io/sbx/mend-ai-security-kit:latest \
+  --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
   -e MEND_EMAIL="svc@example.com" \
   -e MEND_ORGANIZATION="<org-uuid>" .
 ```
 
 > The published OCI artifact is built and pushed to
 > `docker.io/ajeetraina777/mend-ai-security-kit` by
-> [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) on every
+> [`.github/workflows/publish.yml`](.github/workflows/publish.yml) on every
 > push to `main`. Consumers should pin by digest (`@sha256:...`) rather than
 > `:latest` — see the workflow summary for the digest of each build.
 

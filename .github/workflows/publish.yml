@@ -9,7 +9,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "mend-ai-security/**"
+      - "spec.yaml"
+      - "files/**"
       - ".github/workflows/publish.yml"
   workflow_dispatch: {}
 
@@ -38,7 +39,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate kit
-        run: sbx kit validate ./mend-ai-security/
+        run: sbx kit validate ./
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -49,7 +50,7 @@ jobs:
       - name: Push kit to Docker Hub
         run: |
           set -euo pipefail
-          sbx kit push ./mend-ai-security/ \
+          sbx kit push ./ \
             "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mend-ai-security-kit:latest" \
             | tee /tmp/push.log
 
