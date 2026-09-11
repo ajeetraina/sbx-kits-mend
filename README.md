@@ -11,31 +11,7 @@ ability to run Mend AI security scans against the code it is working on.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph SBX["sbx sandbox (microVM)"]
-      AGENT["Coding agent<br/>claude / codex / ..."]
-      WS["Workspace<br/>your code"]
-      MEND["Mend CLI<br/>mend ai scan"]
-      AGENT -->|invokes| MEND
-      MEND -->|scans| WS
-    end
-    subgraph PROXY["sbx credential proxy"]
-      INJ["Sentinel swap<br/>MEND_USER_KEY = proxy-managed"]
-      EG["Egress allow-list<br/>*.mend.io"]
-    end
-    HOST["Host credential store<br/>real MEND_USER_KEY"]
-    subgraph MENDIO["Mend platform"]
-      DL["downloads.mend.io<br/>CLI binary + auto-update"]
-      API["saas.mend.io / api-saas.mend.io<br/>auth + AI-BOM upload"]
-    end
-    MEND -->|outbound request| INJ
-    HOST -.->|real key injected on egress| INJ
-    INJ --> EG
-    EG --> DL
-    EG --> API
-    API -->|"AI-BOM: models, frameworks,<br/>system prompts"| MEND
-```
+<img src="./assets/architecture.png" alt="Mend AI Security sbx kit architecture" width="100%" />
 
 The Mend CLI runs inside the sandbox and scans the workspace in place. Your
 `MEND_USER_KEY` stays **proxy-managed**: inside the container it is only the
