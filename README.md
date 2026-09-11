@@ -98,15 +98,22 @@ mend connectivity --mend-url="$MEND_URL"   # verify auth/network
 mend ai scan --directory .                 # AI security scan + AI-BOM
 ```
 
-## Limitations
+## Architecture support
 
-- **linux_amd64 only — will not run on Apple Silicon.** Mend does not publish a
-  native Linux arm64 CLI build, so this kit installs the `linux_amd64` binary.
-  On an arm64 host (e.g. an Apple Silicon Mac) the sandbox is an aarch64 microVM
-  and the binary fails with `Exec format error`. Emulation is not a workaround
-  here either — the microVM has no `qemu-user-static` and `binfmt_misc` is not
-  mounted. Run this kit on an **amd64 host** (Intel/AMD, or amd64 CI/cloud),
-  where it installs and runs cleanly.
+The install step detects the sandbox architecture (`uname -m`) and downloads
+the matching Mend CLI binary:
+
+| Sandbox arch | Binary |
+|---|---|
+| `x86_64` (Intel/AMD, most CI/cloud) | `https://downloads.mend.io/cli/linux_amd64/mend` |
+| `aarch64` / `arm64` (Apple Silicon microVMs) | `https://downloads.mend.io/cli/linux_arm64/mend` |
+
+> **Note:** Mend's [download docs](https://docs.mend.io/platform/latest/download-the-mend-cli)
+> list only `linux_amd64` and state that Linux arm64 is "not currently
+> supported", but `downloads.mend.io/cli/linux_arm64/mend` in fact serves a real
+> native aarch64 executable, which this kit uses on arm64 hosts. If Mend ever
+> withdraws that undocumented build, arm64 installs would fail — pin to an amd64
+> host in that case.
 
 ## License
 

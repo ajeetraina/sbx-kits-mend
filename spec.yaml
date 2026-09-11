@@ -41,10 +41,12 @@ environment:
 
 setup:
   install:
-    # Mend ships a linux_amd64 build only (no native linux arm64). Guarded so
+    # Pick the binary matching the sandbox arch. Mend publishes both
+    # linux_amd64 and linux_arm64 (the arm64 build is undocumented on the
+    # download page but is a real native aarch64 executable). Guarded so
     # composing this onto a base that already has the CLI is a no-op.
-    - command: "command -v mend >/dev/null 2>&1 || { curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend && chmod +x /usr/local/bin/mend; }"
-      description: Install the Mend CLI (linux_amd64)
+    - command: 'command -v mend >/dev/null 2>&1 || { case "$(uname -m)" in aarch64|arm64) plat=linux_arm64 ;; *) plat=linux_amd64 ;; esac; curl -fsSL "https://downloads.mend.io/cli/$plat/mend" -o /usr/local/bin/mend && chmod +x /usr/local/bin/mend; }'
+      description: Install the Mend CLI (arch-matched)
 
 agentInstructions:
   content: |
