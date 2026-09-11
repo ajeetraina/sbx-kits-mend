@@ -30,7 +30,7 @@ reference form:
 **Published OCI artifact (recommended):**
 
 ```bash
-sbx run claude --kit docker.io/sbx/mend-ai-security-kit:latest .
+sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest .
 ```
 
 **Git URL:**
@@ -71,6 +71,12 @@ sbx run claude \
   -e MEND_EMAIL="svc@example.com" \
   -e MEND_ORGANIZATION="<org-uuid>" .
 ```
+
+> The published OCI artifact is built and pushed to
+> `docker.io/ajeetraina777/mend-ai-security-kit` by
+> [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) on every
+> push to `main`. Consumers should pin by digest (`@sha256:...`) rather than
+> `:latest` — see the workflow summary for the digest of each build.
 
 Then, inside the sandbox:
 

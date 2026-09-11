@@ -1,0 +1,69 @@
+name: Publish kit
+
+# Publishes the mend-ai-security kit as an OCI artifact to Docker Hub.
+# Auth uses the repo secrets DOCKERHUB_USERNAME (= ajeetraina777) and
+# DOCKERHUB_TOKEN. `sbx kit push` packages the kit and uploads via ORAS using
+# the ambient `docker login` credentials — no microVM / KVM needed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mend-ai-security/**"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sbx CLI
+        run: |
+          set -euo pipefail
+          url="$(gh release view --repo docker/sbx-releases \
+            --json assets \
+            -q '.assets[] | select(.name=="DockerSandboxes-linux-amd64.tar.gz") | .url')"
+          curl -fsSL -o /tmp/sbx.tgz "$url"
+          tar -C /tmp -xzf /tmp/sbx.tgz docker-sbx/sbx
+          sudo install -m 0755 /tmp/docker-sbx/sbx /usr/local/bin/sbx
+          sbx version || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate kit
+        run: sbx kit validate ./mend-ai-security/
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push kit to Docker Hub
+        run: |
+          set -euo pipefail
+          sbx kit push ./mend-ai-security/ \
+            "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mend-ai-security-kit:latest" \
+            | tee /tmp/push.log
+
+      - name: Summarize published reference
+        if: always()
+        run: |
+          {
+            echo "## mend-ai-security kit published"
+            echo ""
+            echo "Namespace: \`docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mend-ai-security-kit\`"
+            echo ""
+            echo "Pin consumers to the digest below (\`:latest\` is rejected by the loader):"
+            echo ""
+            echo '```'
+            grep -oE 'sha256:[0-9a-f]{64}' /tmp/push.log | head -1 || echo "(digest not found in push output — see the Push step log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

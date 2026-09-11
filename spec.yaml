@@ -1,0 +1,92 @@
+schemaVersion: "2"
+kind: mixin
+name: mend-ai-security
+displayName: Mend AI Security
+description: >-
+  Adds the Mend CLI with AI-security scanning to the sandbox: discover AI models,
+  frameworks, and system prompts in the workspace and generate an AI-BOM
+  (AI Bill of Materials) via `mend ai scan`.
+licenses:
+  - Apache-2.0
+
+# The Mend service-user key is the only secret. The proxy manages it: the
+# container sees MEND_USER_KEY=proxy-managed and never the real value. The
+# non-secret coordinates (MEND_URL default below, plus MEND_EMAIL /
+# MEND_ORGANIZATION supplied at run time) tell the CLI which tenant to reach.
+credentials:
+  - service: mend
+    description: "Mend service-user key (MEND_USER_KEY) used by the Mend CLI"
+    required: false
+    apiKey:
+      name: MEND_USER_KEY
+      inject:
+        - domain: saas.mend.io
+          scheme: bearer
+        - domain: api-saas.mend.io
+          scheme: bearer
+
+permissions:
+  network:
+    allow:
+      - "*.mend.io"            # downloads / saas / api-saas / app / saas-eu (single label)
+      - mend.io                # apex — proxy validation
+      - saas.mend.io           # credential inject domain (default SaaS API)
+      - api-saas.mend.io       # credential inject domain (API access)
+
+environment:
+  variables:
+    # Default Mend SaaS region. Override at run time for EU/IL/legacy tenants,
+    # e.g. https://saas-eu.mend.io. Not a secret.
+    MEND_URL: "https://saas.mend.io"
+
+setup:
+  install:
+    # Mend ships a linux_amd64 build only (no native linux arm64). Guarded so
+    # composing this onto a base that already has the CLI is a no-op.
+    - command: "command -v mend >/dev/null 2>&1 || { curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend && chmod +x /usr/local/bin/mend; }"
+      description: Install the Mend CLI (linux_amd64)
+
+agentInstructions:
+  content: |
+    # Mend AI Security
+
+    This sandbox has the Mend CLI (`mend`) installed for AI-aware application
+    security scanning.
+
+    ## Running an AI security scan
+
+    Scan the workspace for AI usage (models, frameworks, system prompts) and
+    produce an AI-BOM:
+
+    ```bash
+    mend ai scan --directory .
+    ```
+
+    Useful flags:
+    - `--directory <path>` / `-d` — directory to scan (defaults to CWD).
+    - `--scope "[Org/][App/][Project]"` / `-s` — where results are recorded.
+    - `--no-upload` — scan locally without uploading to the Mend platform.
+    - `--tags a,b` — attach labels to the scan.
+
+    The AI scan also runs automatically as a step after a dependency (SCA) scan:
+
+    ```bash
+    mend dep          # SCA + AI scan
+    ```
+
+    Other scanners on the same CLI: `mend code` (SAST), `mend image` (container).
+
+    ## Authentication
+
+    The CLI reads these environment variables:
+    - `MEND_URL` — tenant URL (default `https://saas.mend.io`, preset by this kit).
+    - `MEND_EMAIL` — service-user (or personal) email.
+    - `MEND_USER_KEY` — service-user key. **Proxy-managed**: inside the container
+      this is the sentinel `proxy-managed`; the sbx proxy swaps in the real key
+      on outbound requests to Mend. Bind it in `~/.config/sbx/credentials.yaml`.
+    - `MEND_ORGANIZATION` — organization UUID (optional; needed for some scopes).
+
+    `MEND_EMAIL` and `MEND_ORGANIZATION` are not secrets — pass them at run time
+    (e.g. `sbx run <agent> -e MEND_EMAIL=... -e MEND_ORGANIZATION=... ...`).
+
+    Verify connectivity: `mend connectivity --mend-url="$MEND_URL"`.
