@@ -8,6 +8,41 @@ frameworks, and system prompts in your workspace ("Shadow AI") and generate an
 Compose it onto any agent (Claude Code, Codex, …) to give that agent the
 ability to run Mend AI security scans against the code it is working on.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph SBX["sbx sandbox (microVM)"]
+      AGENT["Coding agent<br/>claude / codex / ..."]
+      WS["Workspace<br/>your code"]
+      MEND["Mend CLI<br/>mend ai scan"]
+      AGENT -->|invokes| MEND
+      MEND -->|scans| WS
+    end
+    subgraph PROXY["sbx credential proxy"]
+      INJ["Sentinel swap<br/>MEND_USER_KEY = proxy-managed"]
+      EG["Egress allow-list<br/>*.mend.io"]
+    end
+    HOST["Host credential store<br/>real MEND_USER_KEY"]
+    subgraph MENDIO["Mend platform"]
+      DL["downloads.mend.io<br/>CLI binary + auto-update"]
+      API["saas.mend.io / api-saas.mend.io<br/>auth + AI-BOM upload"]
+    end
+    MEND -->|outbound request| INJ
+    HOST -.->|real key injected on egress| INJ
+    INJ --> EG
+    EG --> DL
+    EG --> API
+    API -->|"AI-BOM: models, frameworks,<br/>system prompts"| MEND
+```
+
+The Mend CLI runs inside the sandbox and scans the workspace in place. Your
+`MEND_USER_KEY` stays **proxy-managed**: inside the container it is only the
+sentinel `proxy-managed`, and the sbx credential proxy swaps in the real key on
+the wire — so the key never enters the sandbox. An egress allow-list bounds
+outbound traffic to `*.mend.io` (CLI download/auto-update plus auth and AI-BOM
+upload), and everything else is denied.
+
 ## What it adds
 
 - The `mend` CLI on `PATH` (`/usr/local/bin/mend`).
