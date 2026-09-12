@@ -29,9 +29,8 @@ upload), and everything else is denied.
 - `mend ai scan` — AI usage discovery + AI-BOM generation.
 - Egress allow-list for `*.mend.io` so scans and CLI auto-update work under a
   `deny-all` network policy.
-- A `MEND_URL` default (`https://saas.mend.io`) plus agent instructions on how
-  to run scans and authenticate (via the CLI's own `mend auth login` or env
-  vars — the kit injects no credential of its own).
+- Agent instructions on how to run scans and authenticate (via the CLI's own
+  `mend auth login` or env vars — the kit injects no credential of its own).
 
 The same CLI also provides `mend dep` (SCA), `mend code` (SAST), and
 `mend image` (container) scanning.
@@ -70,7 +69,7 @@ keys with `Unauthorized`.
 
 | Variable | Secret? | Notes |
 |---|---|---|
-| `MEND_URL` | no | Tenant URL. Preset to `https://saas.mend.io`; override for EU/IL/legacy (e.g. `https://saas-eu.mend.io`). |
+| `MEND_URL` | no | Tenant URL (e.g. `https://saas.mend.io`, or `https://saas-eu.mend.io` for EU/IL/legacy). **Only set it together with `MEND_EMAIL` + `MEND_USER_KEY`** — see the note below. |
 | `MEND_EMAIL` | no | Service-user email. |
 | `MEND_USER_KEY` | **yes** | Service-user key. Passed as-is (no proxy masking) — it is readable in the sandbox, so scope it to a Service User. |
 | `MEND_ORGANIZATION` | no | Organization UUID (needed for some scopes). |
@@ -91,6 +90,13 @@ sbx run claude \
   -e MEND_ORGANIZATION="<org-uuid>" .
 ```
 
+> **Do not set `MEND_URL` on its own.** The CLI reads the presence of `MEND_URL`
+> as an env-var auth attempt and then also requires `MEND_EMAIL` + `MEND_USER_KEY`;
+> a lone `MEND_URL` makes even a completed `mend auth login` session fail with
+> `invalid auth environment variable params were set`. Use the full triplet
+> (Option B) **or** `mend auth login` with no `MEND_*` vars set (Option A) — never
+> just `MEND_URL`. (This is why the kit sets no `MEND_URL` default.)
+
 > The published OCI artifact is built and pushed to
 > `docker.io/ajeetraina777/mend-ai-security-kit` by
 > [`.github/workflows/publish.yml`](.github/workflows/publish.yml) on every
@@ -100,8 +106,8 @@ sbx run claude \
 Then, inside the sandbox:
 
 ```bash
-mend connectivity --mend-url="$MEND_URL"   # verify auth/network
-mend ai scan --directory .                 # AI security scan + AI-BOM
+mend connectivity --mend-url="https://saas.mend.io"   # verify auth/network
+mend ai scan --directory .                            # AI security scan + AI-BOM
 ```
 
 ## Example: scan a project for AI usage
@@ -123,7 +129,7 @@ sbx run claude \
 #    mend auth login   ->   "Enter credentials manually"
 
 # 3. Inside the sandbox: verify connectivity, then scan
-mend connectivity --mend-url="$MEND_URL"
+mend connectivity --mend-url="https://saas.mend.io"
 mend ai scan --directory . --scope "MyOrg//my-ai-app"
 ```
 

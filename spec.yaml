@@ -24,11 +24,13 @@ permissions:
       - "*.mend.io"            # downloads / saas / api-saas / app / saas-eu (single label)
       - mend.io                # apex
 
-environment:
-  variables:
-    # Default Mend SaaS region. Override at run time for EU/IL/legacy tenants,
-    # e.g. https://saas-eu.mend.io. Not a secret.
-    MEND_URL: "https://saas.mend.io"
+# No MEND_URL default is set. The Mend CLI treats the mere presence of MEND_URL
+# (without MEND_EMAIL + MEND_USER_KEY) as an incomplete env-var auth attempt and
+# refuses to use a stored `mend auth login` session, failing with "invalid auth
+# environment variable params were set". Since that login flow is the recommended
+# path, the kit leaves MEND_URL unset: `mend auth login` lets you pick the region
+# interactively, and the env-var auth path passes MEND_URL alongside the full
+# credential triplet.
 
 setup:
   install:
@@ -101,8 +103,16 @@ agentInstructions:
       -e MEND_ORGANIZATION="<org uuid>" .
     ```
 
-    `MEND_URL` is preset by this kit. `MEND_EMAIL` / `MEND_ORGANIZATION` are not
-    secrets. `MEND_USER_KEY` is passed as-is (there is no proxy masking), so it
-    is readable inside the sandbox — use a scoped Service User key.
+    Pass all four together. `MEND_EMAIL` / `MEND_ORGANIZATION` are not secrets.
+    `MEND_USER_KEY` is passed as-is (there is no proxy masking), so it is readable
+    inside the sandbox — use a scoped Service User key.
 
-    Verify connectivity: `mend connectivity --mend-url="$MEND_URL"`.
+    NOTE: do NOT set `MEND_URL` on its own. The CLI reads the presence of
+    `MEND_URL` as an env-var auth attempt and then requires `MEND_EMAIL` +
+    `MEND_USER_KEY` too; setting `MEND_URL` alone makes even a completed
+    `mend auth login` session fail with "invalid auth environment variable params
+    were set". Use either the full triplet (this section) or `mend auth login`
+    with no `MEND_*` vars set (section 1) — not a lone `MEND_URL`.
+
+    Verify connectivity: `mend connectivity --mend-url="https://saas.mend.io"`
+    (use `--mend-url` for your region rather than relying on the env var).
