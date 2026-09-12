@@ -63,6 +63,25 @@ agentInstructions:
     - `--no-upload` — scan locally without uploading to the Mend platform.
     - `--tags a,b` — attach labels to the scan.
 
+    ### Scanning multiple directories
+
+    `--directory` takes a single path, so scan several repos by looping — one
+    scan per directory. Each directory becomes its own scope/project (auto-
+    detected from that directory's git metadata), which is usually what you want:
+
+    ```bash
+    for d in ~/app-a ~/app-b ~/shared; do
+      mend ai scan --directory "$d"   # each -> its own Mend project
+    done
+    ```
+
+    Mount the extra directories into the sandbox as additional workspaces when
+    you launch it (append `:ro` to keep one read-only):
+
+    ```bash
+    sbx run claude --kit <this-kit> ~/app-a ~/app-b ~/shared:ro
+    ```
+
     The AI scan also runs automatically as a step after a dependency (SCA) scan:
 
     ```bash

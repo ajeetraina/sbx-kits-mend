@@ -133,6 +133,23 @@ mend connectivity --mend-url="https://saas.mend.io"
 mend ai scan --directory . --scope "MyOrg//my-ai-app"
 ```
 
+### Scanning multiple directories
+
+`--directory` takes a single path. To scan several repos, mount them as extra
+workspaces and loop — one scan per directory, each recorded as its own
+auto-detected scope/project:
+
+```bash
+# Mount multiple workspaces (append :ro to keep one read-only)
+sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
+  ~/app-a ~/app-b ~/shared:ro
+
+# Then, inside the sandbox, scan each — every dir becomes its own Mend project
+for d in ~/app-a ~/app-b ~/shared; do
+  mend ai scan --directory "$d"
+done
+```
+
 Sample output — the AI-BOM lists the models, frameworks, and system prompts the
 scanner discovered:
 
