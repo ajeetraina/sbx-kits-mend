@@ -48,13 +48,21 @@ applies to `api` mode, not to the committed `sandbox.json`.
 ## Model provider keys (OpenAI / Codex)
 
 The kit sets `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` for the **agent**.
-`mend-guardrails-sandbox-start` **unsets** `OPENAI_BASE_URL` (and
-`OPENAI_API_KEY`) in the **server** process so the OpenAI SDK upstream is
-`https://api.openai.com/v1`, not loopback.
+`mend-guardrails-sandbox-start` **unsets** `OPENAI_BASE_URL` in the **server**
+process so the OpenAI SDK upstream is `https://api.openai.com/v1`, not
+loopback.
+
+`OPENAI_API_KEY` must **not** be empty in the server process. The OpenAI
+client validates credentials in its constructor, so an unset value makes every
+`/v1/chat/completions` request fail with HTTP 500 before any guardrail runs
+(`openai.OpenAIError: Missing credentials`). Startup keeps whatever the
+sandbox provided and otherwise exports the placeholder
+`mend-guardrails-forwarded-per-request`.
 
 `MEND_GUARDRAILS_FORWARD_HEADERS=Authorization`: the agent sends Docker's
-**sentinel**; the server forwards that header; the **host sbx proxy** swaps in
-the real key. Mend never sees, stores, or needs the customer's model API key.
+**sentinel**; the server forwards that header, overriding the constructor
+value; the **host sbx proxy** swaps in the real key. Mend never sees, stores,
+or needs the customer's model API key.
 
 Do not set a real `OPENAI_API_KEY` on the guardrails server.
 

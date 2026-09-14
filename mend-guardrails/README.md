@@ -69,33 +69,77 @@ stays on the pip step while wheels/models download.
 
 ## Check that malicious instructions are blocked
 
-The kit policy (`sandbox.json`) enforces **PromptInjection** and **Secret Keys**
-on the input stage. That file is used only when you **opt in** to local mode.
-After the sandbox is up, a fixture script posts a benign prompt (must be
-allowed) and synthetic jailbreak / fake-key text (must be blocked,
-`mend-guard-text` exit 2):
+Default kit mode is **online** (`policySource=api`). The fixture assumes the
+Mend Platform org policy is already set to **Block** the input detectors you
+care about (Prompt Injection / Jailbreak, Secret Keys). It does not use
+`sandbox.json`.
+
+After the sandbox is up, the app posts a benign prompt (must be allowed) and
+synthetic jailbreak / fake-key text (must be blocked: HTTP 200,
+`"allowed": false`) to `/v1/guard/input`. That is the same org policy Codex
+uses, without calling the upstream model. Chat Completions is not a reliable
+block probe here: the server runs input checks **in parallel with** the LLM
+call, so a jailbreak can 500 at the provider instead of returning HTTP 400.
+
+The app does **not** require a shell pipe to `mend-guard-text`.
 
 ```bash
-sbx run codex --kit ./mend-guardrails \
-  --kit-arg mend-guardrails.policySource=local \
-  --kit-arg mend-guardrails.offline=true \
-  -e MEND_KEY="<license>" .
+sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
 ```
 
 In the Codex TUI, run it as a **shell** command (prefix `!`). Do **not** paste
-it into the prompt box — that sends a model request first.
+the jailbreak text into the prompt box.
 
 ```text
-! bash mend-guardrails/tests/malicious-instructions.sh
+! python3 mend-guardrails/tests/malicious_app.py
 ```
+
+Each case prints the text sent in (`IN →`) and the guardrails response
+(`OUT ←`). Long values are trimmed; set `MEND_TEST_FULL=1` for the full body.
+
+The app refuses to run if the sandbox was started with `policySource=local` or
+`offline=true`. Blocked cases never need a live model reply.
 
 If the TUI errors with `gpt-5.6-sol` / ChatGPT account, switch model (`/model`)
 to one your ChatGPT plan allows (often `gpt-5.6-luna` or `gpt-5.6-terra`) or
 use an API key. That failure is from the **model** call, not from Guardrails.
 
-To see Guardrails stop a jailbreak in the agent path, switch model first, then
-type the injection as a prompt. The script itself uses `/v1/guard/input` and
-does not need a live model reply.
+## Check the transparent path (no Mend call in the app)
+
+`tests/malicious_openai_app.py` is an ordinary OpenAI client: it builds
+`OpenAI(base_url=OPENAI_BASE_URL)` and calls `chat.completions.create` with
+the same payloads. It never calls `/v1/guard/*`, `mend-guard-text`, or adds a
+`guardrails` block — inspection happens only because the kit pointed
+`OPENAI_BASE_URL` at the loopback server.
+
+```text
+! python3 mend-guardrails/tests/malicious_openai_app.py
+```
+
+A block is HTTP **400** with `detail.error=guardrail_enforcement_triggered`.
+Each case prints `IN →` (the prompt) and `OUT ←` (the model reply on 200, or
+the error body), so you can see exactly what reached the model and what came
+back. Override the model with `OPENAI_MODEL` if the upstream rejects the
+default. On this endpoint input guardrails run **in parallel** with the model
+call, so upstream failures (401/429/5xx) also land here.
+
+The app uses the `openai` SDK only when `OPENAI_API_KEY` is set. Without it,
+it falls back to plain HTTP and sends **no** `Authorization` header, so the
+sbx host proxy can still inject the real credential. Sending an invented
+bearer token breaks that swap.
+
+A benign prompt can also come back `401`/`429` when the sandbox has no usable
+provider credential. Policy allowed it, the provider refused, so the fixture
+reports that as allowed rather than failing.
+
+HTTP **500** is an unmapped server-side exception, not a verdict. Point either
+fixture at another server to read its log — `OPENAI_BASE_URL` for
+`malicious_openai_app.py`, `MEND_GUARDRAILS_URL` for `malicious_app.py`:
+
+```bash
+mend-guardrails-server --host 127.0.0.1 --port 8788 \
+  --policy-source api --log-level debug
+```
 
 ## License
 

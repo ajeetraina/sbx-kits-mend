@@ -11,8 +11,12 @@ fi
 # Kit env points Codex at loopback. The OpenAI SDK also reads OPENAI_BASE_URL
 # as the *upstream*; leaving it set would make this process proxy to itself.
 unset OPENAI_BASE_URL
-# Prefer the per-request forwarded sentinel over a process-wide key.
-unset OPENAI_API_KEY
+# The OpenAI client validates credentials in its constructor, so an unset
+# OPENAI_API_KEY makes every /v1/chat/completions request fail with HTTP 500
+# before any guardrail runs. Keep whatever the sandbox provided (Docker's
+# sentinel) and fall back to a placeholder: the per-request forwarded
+# Authorization header overrides it, and the real key is swapped on the host.
+export OPENAI_API_KEY="${OPENAI_API_KEY:-mend-guardrails-forwarded-per-request}"
 
 # This process must use the sandbox HTTP proxy for provider upstream.
 _without_openai_noproxy() {
