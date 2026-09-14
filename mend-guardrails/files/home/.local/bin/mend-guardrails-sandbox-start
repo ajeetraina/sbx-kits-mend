@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH:-}"
+
+# Kit env points Codex at loopback. The OpenAI SDK also reads OPENAI_BASE_URL
+# as the *upstream*; leaving it set would make this process proxy to itself.
+unset OPENAI_BASE_URL
+# Prefer the per-request forwarded sentinel over a process-wide key.
+unset OPENAI_API_KEY
+
+# This process must use the sandbox HTTP proxy for provider upstream.
+_without_openai_noproxy() {
+  in="${1-},"
+  out=""
+  while [ -n "$in" ]; do
+    p=${in%%,*}
+    rest=${in#"$p"}
+    in=${rest#,}
+    # trim leading/trailing spaces
+    while [ -n "$p" ] && [ "${p# }" != "$p" ]; do
+      p=${p# }
+    done
+    while [ -n "$p" ] && [ "${p% }" != "$p" ]; do
+      p=${p% }
+    done
+    case "$p" in
+      api.openai.com|openai.com|.openai.com|'*.openai.com') continue ;;
+      '') continue ;;
+    esac
+    if [ -n "$out" ]; then
+      out="${out},${p}"
+    else
+      out="${p}"
+    fi
+  done
+  printf '%s' "$out"
+}
+
+if [ -n "${NO_PROXY:-}" ]; then
+  NO_PROXY="$(_without_openai_noproxy "$NO_PROXY")"
+  export NO_PROXY
+fi
+if [ -n "${no_proxy:-}" ]; then
+  no_proxy="$(_without_openai_noproxy "$no_proxy")"
+  export no_proxy
+fi
+
+# Startup does not gate the agent entrypoint. Callers (and mend-guard-text)
+# retry /health. This process *is* the server.
+exec mend-guardrails-server \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --policy-dir "${MEND_GUARDRAILS_POLICY_DIR:-/home/agent/.mend-guardrails/policies}" \
+  --default-config "${MEND_GUARDRAILS_DEFAULT_CONFIG_ID:-sandbox}" \
+  --name "${MEND_GUARDRAILS_INSTANCE_NAME:-docker-sandbox}" \
+  --policy-source "${MEND_GUARDRAILS_POLICY_SOURCE:-local}"
