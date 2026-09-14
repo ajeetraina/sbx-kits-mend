@@ -7,13 +7,36 @@ Two [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) **`kind: mixin`** 
 | [`mend-ai-security/`](./mend-ai-security/) | Mend CLI + `mend ai scan` (AI-BOM / Shadow AI). Works on any agent. |
 | [`mend-guardrails/`](./mend-guardrails/) | Loopback `mend-guardrails-server` on Codex / OpenAI-compatible agents (`OPENAI_BASE_URL`). Inspects prompt bodies (secrets, PII, prompt injection) and exposes `/v1/guard/*` for cooperative MCP/tool-text checks. |
 
-Compose them on Codex:
+The kits use **different secrets**. They are not interchangeable.
+
+| Variable | Kit | What it is |
+|---|---|---|
+| `MEND_KEY` | Guardrails | [Activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails) from the Mend platform (Integrations → Mend AI Guardrails). Parsed **inside** the VM. |
+| `MEND_USER_KEY` | AI Security (CLI) | Service User key, with `MEND_EMAIL` (+ `MEND_URL` / `MEND_ORGANIZATION`). Or skip env vars and run `mend auth login` inside the sandbox. |
+
+Do **not** put either secret in kit `args:` / `--kit-arg`. Do **not** declare `credentials.apiKey.inject` on `*.mend.io` — that TLS-intercepts Mend and breaks CLI login. See [`mend-ai-security/docs/CREDENTIALS.md`](./mend-ai-security/docs/CREDENTIALS.md) and [`mend-guardrails/docs/CREDENTIALS.md`](./mend-guardrails/docs/CREDENTIALS.md).
+
+Compose them on Codex. `MEND_KEY` is passed **once** at runtime (Guardrails). The CLI can still `mend auth login` inside the VM:
 
 ```bash
 sbx run codex \
   --kit ./mend-ai-security \
   --kit ./mend-guardrails \
-  -e MEND_KEY="<mend-guardrails-license>" \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
+```
+
+Both products authenticated at launch (CLI env-var path):
+
+```bash
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  -e MEND_URL="https://saas.mend.io" \
+  -e MEND_EMAIL="<service-user-email>" \
+  -e MEND_USER_KEY="<service-user-key>" \
+  -e MEND_ORGANIZATION="<org-uuid>" \
   .
 ```
 
@@ -23,7 +46,7 @@ Git URL form (pin `ref` to a 40-hex SHA):
 sbx run codex \
   --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>&dir=mend-ai-security" \
   --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>&dir=mend-guardrails" \
-  -e MEND_KEY="<mend-guardrails-license>" \
+  -e MEND_KEY="<guardrails-activation-key>" \
   .
 ```
 
@@ -33,16 +56,9 @@ Published OCI artifacts (pin by digest, not `:latest`):
 sbx run codex \
   --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
   --kit docker.io/ajeetraina777/mend-guardrails-kit:latest \
-  -e MEND_KEY="<mend-guardrails-license>" \
+  -e MEND_KEY="<guardrails-activation-key>" \
   .
 ```
-
-`MEND_KEY` is required for the Guardrails mixin (activation key from the Mend
-platform; parsed **inside** the VM). It is **not** proxy-managed. Do **not**
-declare `credentials.apiKey.inject` on `*.mend.io` — that TLS-intercepts Mend
-and breaks CLI login. See
-[`mend-ai-security/docs/CREDENTIALS.md`](./mend-ai-security/docs/CREDENTIALS.md)
-and [`mend-guardrails/docs/CREDENTIALS.md`](./mend-guardrails/docs/CREDENTIALS.md).
 
 The Guardrails mixin sets `requires.agent: codex` and rewrites `OPENAI_BASE_URL`
 to the loopback inspector. Drop `requires.agent` in a fork to reuse that rewrite

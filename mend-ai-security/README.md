@@ -60,6 +60,22 @@ git clone https://github.com/ajeetraina/sbx-kits-mend.git
 sbx run claude --kit ./sbx-kits-mend/mend-ai-security/ .
 ```
 
+## Stack with Guardrails (Codex)
+
+`MEND_KEY` belongs to the Guardrails mixin (platform activation key). This kit
+still uses `MEND_USER_KEY` or `mend auth login` — those are not the same secret.
+
+```bash
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
+```
+
+To authenticate the CLI at launch as well, add `MEND_URL`, `MEND_EMAIL`,
+`MEND_USER_KEY`, and `MEND_ORGANIZATION` (see Authentication below).
+
 ## Authentication
 
 The Mend CLI authenticates **itself** — the kit injects no credential; it only

@@ -111,9 +111,11 @@ agentInstructions:
 
     ## License
 
-    `MEND_KEY` must be present (`sbx run -e`). It is a license parsed inside
-    the VM, not a proxy-managed secret. `MEND_GUARDRAILS_OFFLINE=true` skips
-    Mend platform connection; it does not remove the `MEND_KEY` requirement.
+    `MEND_KEY` must be present (`sbx run -e`). It is the Guardrails activation
+    key from the Mend platform (Integrations → Mend AI Guardrails), parsed
+    inside the VM, not a proxy-managed secret. It is **not** the CLI Service
+    User key (`MEND_USER_KEY`). `MEND_GUARDRAILS_OFFLINE=true` skips Mend
+    platform connection; it does not remove the `MEND_KEY` requirement.
 
     ## Health / race
 
@@ -144,5 +146,7 @@ agentInstructions:
 
     ## Stacking with Mend CLI
 
-    Compose `--kit ./mend-ai-security` for `mend ai scan`. That CLI authenticates
-    itself; this kit must not TLS-intercept `*.mend.io`.
+    Compose `--kit ./mend-ai-security` for `mend ai scan`. Pass `MEND_KEY` for
+    this Guardrails mixin. The CLI authenticates separately (`mend auth login`
+    or `MEND_EMAIL` + `MEND_USER_KEY`). This kit must not TLS-intercept
+    `*.mend.io`.

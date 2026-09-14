@@ -3,6 +3,11 @@ set -eu
 
 export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH:-}"
 
+# SDK reads MEND_KEY. Alias is for hosts that already export another Mend key.
+if [ -z "${MEND_KEY:-}" ] && [ -n "${MEND_GUARDRAILS_KEY:-}" ]; then
+  export MEND_KEY="$MEND_GUARDRAILS_KEY"
+fi
+
 # Kit env points Codex at loopback. The OpenAI SDK also reads OPENAI_BASE_URL
 # as the *upstream*; leaving it set would make this process proxy to itself.
 unset OPENAI_BASE_URL

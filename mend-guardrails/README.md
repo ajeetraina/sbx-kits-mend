@@ -17,12 +17,13 @@ kit.
 sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
 ```
 
-Optional kit args (not secrets). Always pass `MEND_KEY` (platform activation
-key). Default `policySource=local` uses this kit's `sandbox.json`; it does not
-load the org Default Guardrails Policy. Use `policySource=api` with
-`offline=false` for platform policy and AI Runtime dashboard events. Do not
-combine `offline=true` with `policySource=api`. `offline=true` only skips
-platform registration/telemetry.
+Optional kit args (not secrets). Always pass `MEND_KEY` (the [platform
+activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails),
+not a CLI Service User key). Default `policySource=local` uses this kit's
+`sandbox.json`; it does not load the org Default Guardrails Policy. Use
+`policySource=api` with `offline=false` for platform policy and AI Runtime
+dashboard events. Do not combine `offline=true` with `policySource=api`.
+`offline=true` only skips platform registration/telemetry.
 
 ```bash
 sbx run codex --kit ./mend-guardrails \
@@ -31,13 +32,29 @@ sbx run codex --kit ./mend-guardrails \
   -e MEND_KEY="<license>" .
 ```
 
-Stack with the CLI AI-BOM mixin:
+Stack with the CLI AI-BOM mixin. `MEND_KEY` is Guardrails only; the CLI uses
+`mend auth login` inside the VM, or pass `MEND_USER_KEY` separately (it is not
+the same secret):
 
 ```bash
 sbx run codex \
   --kit ./mend-ai-security \
   --kit ./mend-guardrails \
-  -e MEND_KEY="<license>" \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
+```
+
+Both products authenticated at launch:
+
+```bash
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  -e MEND_URL="https://saas.mend.io" \
+  -e MEND_EMAIL="<service-user-email>" \
+  -e MEND_USER_KEY="<service-user-key>" \
+  -e MEND_ORGANIZATION="<org-uuid>" \
   .
 ```
 
@@ -47,6 +64,24 @@ Git: `#dir=mend-guardrails`. OCI: `docker.io/ajeetraina777/mend-guardrails-kit`
 Python **3.11+** is required (upstream package). Install also needs PyPI,
 GitHub (spaCy model wheel), Mend downloads, and Hugging Face if models are not
 bundled in the wheel.
+
+## Check that malicious instructions are blocked
+
+The kit policy (`sandbox.json`) enforces **PromptInjection** and **Secret Keys**
+on the input stage. After the sandbox is up, a fixture script posts a benign
+prompt (must be allowed) and synthetic jailbreak / fake-key text (must be
+blocked, `mend-guard-text` exit 2):
+
+```bash
+sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
+# inside the sandbox:
+until curl -fsS http://127.0.0.1:8787/health; do sleep 1; done
+bash mend-guardrails/tests/malicious-instructions.sh
+```
+
+You can also paste a jailbreak into Codex itself; `OPENAI_BASE_URL` sends the
+prompt body through the same inspector. The script uses the cooperative Guard
+API (`/v1/guard/input`), so it does not depend on a live model reply.
 
 ## License
 

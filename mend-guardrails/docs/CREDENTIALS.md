@@ -6,8 +6,10 @@ forwards the **model-provider** `Authorization` sentinel unchanged.
 ## MEND_KEY (Guardrails license)
 
 The Python SDK / `mend-guardrails-server` **parse `MEND_KEY` inside the VM**
-(JWT / Caesar-wrapped license). Entitlement does not work with Docker's
-`proxy-managed` sentinel in that environment variable.
+(JWT / Caesar-wrapped license). Get it from the Mend platform:
+[Integrations → Mend AI Guardrails → Get Activation Key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails).
+It is **not** the CLI Service User key (`MEND_USER_KEY`). Entitlement does not
+work with Docker's `proxy-managed` sentinel in that environment variable.
 
 Default uses the kit's local `sandbox.json` (`policySource=local`). Pass the
 activation key at launch:
@@ -15,6 +17,10 @@ activation key at launch:
 ```bash
 sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
 ```
+
+If `MEND_KEY` is unset, `mend-guardrails-sandbox-start` copies
+`MEND_GUARDRAILS_KEY` onto `MEND_KEY` for the **server process only** (hosts
+that already export a different Mend key). The SDK still reads `MEND_KEY`.
 
 Trade-off: the key is readable inside the sandbox. Scope it to Guardrails.
 
@@ -52,5 +58,16 @@ Declaring `credentials.apiKey.inject` on `*.mend.io` makes the sbx proxy
 TLS-intercept those hosts. That breaks the Mend CLI login handshake used by
 the `mend-ai-security` mixin (same credentials work on the host). This kit
 must remain composable with that mixin: allow-list only, no inject.
+
+Stack both kits with one `MEND_KEY` (Guardrails) at runtime. CLI login is
+separate (`mend auth login` or `MEND_EMAIL` + `MEND_USER_KEY`):
+
+```bash
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
+```
 
 See [`../../mend-ai-security/docs/CREDENTIALS.md`](../../mend-ai-security/docs/CREDENTIALS.md).
