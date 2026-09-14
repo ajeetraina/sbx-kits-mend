@@ -20,17 +20,19 @@ requires:
 args:
   offline:
     description: >-
-      Set MEND_GUARDRAILS_OFFLINE. true skips platform connection (registration,
-      telemetry). Does not change policySource. MEND_KEY is still required.
-      Do not combine with policySource=api.
+      Set MEND_GUARDRAILS_OFFLINE. Default false (online server: platform
+      registration and telemetry). Required true when policySource=local —
+      the SDK rejects local policy files in online mode. MEND_KEY is still
+      required. Do not combine with policySource=api.
     default: "false"
     enum: ["false", "true"]
   policySource:
     description: >-
-      local uses the kit sandbox.json file. api loads the org policy from the
-      Mend Platform (requires offline=false). Platform default guardrails are
-      off until an admin enables them; sandbox.json is independent of that.
-    default: local
+      Default api loads the org policy from the Mend Platform (requires
+      offline=false). Platform default guardrails are off until an admin
+      enables them. Opt in to local for the kit sandbox.json file (startup
+      then forces offline=true).
+    default: api
     enum: [local, api]
 
 # Do NOT declare credentials.apiKey.inject on *.mend.io — TLS intercept breaks
@@ -75,9 +77,17 @@ setup:
         fi
         python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
           || { echo "mend-guardrails kit requires python3 >= 3.11" >&2; exit 1; }
+      description: Check python3 >= 3.11
+    - command: |
+        set -euo pipefail
+        echo "pip install mend-guardrails[server] (PyPI, Mend extra-index, spaCy, Hugging Face)"
         python3 -m pip install --break-system-packages \
+          -v --progress-bar on --timeout 120 --retries 5 \
           --extra-index-url https://downloads.mend.io/guardrails/ \
           'mend-guardrails[server]'
+      description: pip install mend-guardrails[server]
+    - command: |
+        set -euo pipefail
         chmod +x /home/agent/.local/bin/mend-guard-text \
           /home/agent/.local/bin/mend-guardrails-sandbox-start \
           /home/agent/.local/bin/curl
@@ -92,7 +102,7 @@ setup:
           printf '. %s\n' "$AGENT_ENV" > /etc/profile.d/mend-guardrails-noproxy.sh
         fi
         command -v mend-guardrails-server
-      description: Install mend-guardrails[server] and helper scripts
+      description: chmod helpers and shell rc hooks
   startup:
     - command: ["/home/agent/.local/bin/mend-guardrails-sandbox-start"]
       background: true
@@ -112,10 +122,12 @@ agentInstructions:
     ## License
 
     `MEND_KEY` must be present (`sbx run -e`). It is the Guardrails activation
-    key from the Mend platform (Integrations → Mend AI Guardrails), parsed
-    inside the VM, not a proxy-managed secret. It is **not** the CLI Service
-    User key (`MEND_USER_KEY`). `MEND_GUARDRAILS_OFFLINE=true` skips Mend
-    platform connection; it does not remove the `MEND_KEY` requirement.
+    key from the Mend platform (Integrations → Mend AI Guardrails). It is
+    **not** the CLI Service User key (`MEND_USER_KEY`). Default is online
+    (`policySource=api`,
+    `offline=false`). `MEND_GUARDRAILS_OFFLINE=true` skips Mend platform
+    connection and is required for `policySource=local`; it does not remove
+    the `MEND_KEY` requirement.
 
     ## Health / race
 
@@ -123,7 +135,7 @@ agentInstructions:
     wait until the server is up:
 
     ```bash
-    until curl -fsS http://127.0.0.1:8787/health; do sleep 1; done
+    until curl -fsS --noproxy 127.0.0.1,localhost,::1 http://127.0.0.1:8787/health; do sleep 1; done
     ```
 
     ## Cooperative MCP / tool-result scan (not a transparent intercept)

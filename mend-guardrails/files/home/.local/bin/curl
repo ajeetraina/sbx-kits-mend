@@ -23,4 +23,20 @@ done
 if [ "$_explicit_proxy" -eq 1 ]; then
   exec "$_real" "$@"
 fi
-exec "$_real" --noproxy api.openai.com "$@"
+
+# --noproxy replaces env NO_PROXY. Merge so loopback (guardrails server)
+# is not sent to the sbx HTTP proxy, which 403s 127.0.0.1.
+_noproxy="${NO_PROXY:-${no_proxy:-}}"
+for _h in api.openai.com 127.0.0.1 localhost ::1; do
+  case ",${_noproxy}," in
+    *,${_h},*) ;;
+    *)
+      if [ -n "$_noproxy" ]; then
+        _noproxy="${_noproxy},${_h}"
+      else
+        _noproxy="${_h}"
+      fi
+      ;;
+  esac
+done
+exec "$_real" --noproxy "$_noproxy" "$@"

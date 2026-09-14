@@ -3,10 +3,14 @@
 # Guard API (input stage). Run this *inside* a sandbox that already has
 # mend-guardrails-server on 127.0.0.1:8787.
 #
-# Host:
-#   sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
-# Then in that session:
-#   bash mend-guardrails/tests/malicious-instructions.sh
+# Host (opt in to local sandbox.json; default is online/api):
+#   sbx run codex --kit ./mend-guardrails \
+#     --kit-arg mend-guardrails.policySource=local \
+#     --kit-arg mend-guardrails.offline=true \
+#     -e MEND_KEY="<license>" .
+# In the Codex TUI, as a shell command (not the prompt):
+#   ! bash mend-guardrails/tests/malicious-instructions.sh
+# A ChatGPT login + gpt-5.6-sol model error is from Codex, not this script.
 #
 # Payloads are detector fixtures only (jailbreak phrasing + fake secret
 # shape). They are not working exploits or real credentials.
@@ -22,7 +26,30 @@ if ! command -v "$GUARD" >/dev/null 2>&1; then
   exit 1
 fi
 
-until curl -fsS http://127.0.0.1:8787/health >/dev/null; do
+# This fixture asserts the committed sandbox.json (PromptInjection + Secret Keys).
+# Default kit mode is online/api; local files are rejected unless you opt in.
+policy_source="${MEND_GUARDRAILS_POLICY_SOURCE:-api}"
+if [[ "$policy_source" != "local" ]]; then
+  echo "this script needs kit sandbox.json (policySource=local). Recreate the sandbox with:" >&2
+  echo "  sbx run codex --kit ./mend-guardrails \\" >&2
+  echo "    --kit-arg mend-guardrails.policySource=local \\" >&2
+  echo "    --kit-arg mend-guardrails.offline=true \\" >&2
+  echo "    -e MEND_KEY=\"<license>\" ." >&2
+  echo "current MEND_GUARDRAILS_POLICY_SOURCE=${policy_source}" >&2
+  exit 1
+fi
+
+# Bypass HTTP_PROXY: the sbx proxy 403s loopback (curl --noproxy overrides env).
+deadline=$((SECONDS + 60))
+while true; do
+  if curl -fsS --noproxy 127.0.0.1,localhost,::1 http://127.0.0.1:8787/health >/dev/null; then
+    break
+  fi
+  if (( SECONDS >= deadline )); then
+    echo "mend-guardrails-server not healthy on 127.0.0.1:8787 after 60s (HTTP 403 usually means curl went through HTTP_PROXY)" >&2
+    curl -sS -D - --noproxy 127.0.0.1,localhost,::1 http://127.0.0.1:8787/health || true
+    exit 1
+  fi
   sleep 1
 done
 

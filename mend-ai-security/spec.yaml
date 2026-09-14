@@ -123,8 +123,6 @@ agentInstructions:
     ```
 
     Pass all four together. `MEND_EMAIL` / `MEND_ORGANIZATION` are not secrets.
-    `MEND_USER_KEY` is passed as-is (there is no proxy masking), so it is readable
-    inside the sandbox — use a scoped Service User key.
 
     If `MEND_KEY` is set, it is the Guardrails mixin activation key, not CLI
     login. The CLI still needs `mend auth login` or `MEND_USER_KEY`.

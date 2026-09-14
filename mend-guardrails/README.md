@@ -19,16 +19,17 @@ sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
 
 Optional kit args (not secrets). Always pass `MEND_KEY` (the [platform
 activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails),
-not a CLI Service User key). Default `policySource=local` uses this kit's
-`sandbox.json`; it does not load the org Default Guardrails Policy. Use
-`policySource=api` with `offline=false` for platform policy and AI Runtime
-dashboard events. Do not combine `offline=true` with `policySource=api`.
-`offline=true` only skips platform registration/telemetry.
+not a CLI Service User key). Default is **online**: `policySource=api` and
+`offline=false` load the org policy from the Mend Platform (AI Runtime
+dashboard events). Platform default guardrails are off until an admin enables
+them. Opt in to the kit's `sandbox.json` with `policySource=local` (startup
+forces `offline=true`; the SDK does not load local files in online mode). Do
+not combine `offline=true` with `policySource=api`.
 
 ```bash
 sbx run codex --kit ./mend-guardrails \
-  --kit-arg mend-guardrails.offline=true \
   --kit-arg mend-guardrails.policySource=local \
+  --kit-arg mend-guardrails.offline=true \
   -e MEND_KEY="<license>" .
 ```
 
@@ -63,25 +64,38 @@ Git: `#dir=mend-guardrails`. OCI: `docker.io/ajeetraina777/mend-guardrails-kit`
 
 Python **3.11+** is required (upstream package). Install also needs PyPI,
 GitHub (spaCy model wheel), Mend downloads, and Hugging Face if models are not
-bundled in the wheel.
+bundled in the wheel. First `sbx run --kit` can take several minutes; the TUI
+stays on the pip step while wheels/models download.
 
 ## Check that malicious instructions are blocked
 
 The kit policy (`sandbox.json`) enforces **PromptInjection** and **Secret Keys**
-on the input stage. After the sandbox is up, a fixture script posts a benign
-prompt (must be allowed) and synthetic jailbreak / fake-key text (must be
-blocked, `mend-guard-text` exit 2):
+on the input stage. That file is used only when you **opt in** to local mode.
+After the sandbox is up, a fixture script posts a benign prompt (must be
+allowed) and synthetic jailbreak / fake-key text (must be blocked,
+`mend-guard-text` exit 2):
 
 ```bash
-sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
-# inside the sandbox:
-until curl -fsS http://127.0.0.1:8787/health; do sleep 1; done
-bash mend-guardrails/tests/malicious-instructions.sh
+sbx run codex --kit ./mend-guardrails \
+  --kit-arg mend-guardrails.policySource=local \
+  --kit-arg mend-guardrails.offline=true \
+  -e MEND_KEY="<license>" .
 ```
 
-You can also paste a jailbreak into Codex itself; `OPENAI_BASE_URL` sends the
-prompt body through the same inspector. The script uses the cooperative Guard
-API (`/v1/guard/input`), so it does not depend on a live model reply.
+In the Codex TUI, run it as a **shell** command (prefix `!`). Do **not** paste
+it into the prompt box — that sends a model request first.
+
+```text
+! bash mend-guardrails/tests/malicious-instructions.sh
+```
+
+If the TUI errors with `gpt-5.6-sol` / ChatGPT account, switch model (`/model`)
+to one your ChatGPT plan allows (often `gpt-5.6-luna` or `gpt-5.6-terra`) or
+use an API key. That failure is from the **model** call, not from Guardrails.
+
+To see Guardrails stop a jailbreak in the agent path, switch model first, then
+type the injection as a prompt. The script itself uses `/v1/guard/input` and
+does not need a live model reply.
 
 ## License
 

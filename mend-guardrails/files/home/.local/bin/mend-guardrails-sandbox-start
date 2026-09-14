@@ -53,10 +53,34 @@ fi
 
 # Startup does not gate the agent entrypoint. Callers (and mend-guard-text)
 # retry /health. This process *is* the server.
+# Default is online (policy-source api). Local sandbox.json is opt-in and
+# requires offline — the SDK rejects local files in online mode.
+policy_source="${MEND_GUARDRAILS_POLICY_SOURCE:-api}"
+offline="${MEND_GUARDRAILS_OFFLINE:-false}"
+case "$offline" in
+  true|TRUE|1) offline_on=1 ;;
+  *) offline_on=0 ;;
+esac
+case "$policy_source" in
+  local)
+    export MEND_GUARDRAILS_OFFLINE=true
+    ;;
+  api)
+    if [ "$offline_on" -eq 1 ]; then
+      echo "mend-guardrails: policySource=api cannot be combined with offline=true" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "mend-guardrails: unknown MEND_GUARDRAILS_POLICY_SOURCE='$policy_source' (use local or api)" >&2
+    exit 1
+    ;;
+esac
+
 exec mend-guardrails-server \
   --host 127.0.0.1 \
   --port 8787 \
   --policy-dir "${MEND_GUARDRAILS_POLICY_DIR:-/home/agent/.mend-guardrails/policies}" \
   --default-config "${MEND_GUARDRAILS_DEFAULT_CONFIG_ID:-sandbox}" \
   --name "${MEND_GUARDRAILS_INSTANCE_NAME:-docker-sandbox}" \
-  --policy-source "${MEND_GUARDRAILS_POLICY_SOURCE:-local}"
+  --policy-source "$policy_source"

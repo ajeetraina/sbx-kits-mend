@@ -15,6 +15,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -22,6 +23,18 @@ import urllib.request
 
 HOST = "http://127.0.0.1:8787"
 HEALTH = f"{HOST}/health"
+
+
+def _ensure_loopback_noproxy() -> None:
+    """urllib honors HTTP_PROXY; the sbx proxy 403s 127.0.0.1."""
+    extra = ("127.0.0.1", "localhost", "::1")
+    for key in ("NO_PROXY", "no_proxy"):
+        cur = os.environ.get(key, "")
+        parts = [p.strip() for p in cur.split(",") if p.strip()]
+        for host in extra:
+            if host not in parts:
+                parts.append(host)
+        os.environ[key] = ",".join(parts)
 
 
 def _wait_healthy(timeout_s: float = 30.0) -> None:
@@ -54,12 +67,17 @@ def main(argv: list[str]) -> int:
         print("mend-guard-text: empty text", file=sys.stderr)
         return 1
 
+    _ensure_loopback_noproxy()
     _wait_healthy()
 
-    config_id = __import__("os").environ.get(
-        "MEND_GUARDRAILS_DEFAULT_CONFIG_ID", "sandbox"
-    )
-    body = json.dumps({"text": text, "config_id": config_id}).encode("utf-8")
+    payload: dict[str, str] = {"text": text}
+    # Local files are only valid when the server is offline (policySource=local).
+    # In api mode, config_id is ignored; sending a local id can 422 online.
+    if os.environ.get("MEND_GUARDRAILS_POLICY_SOURCE", "api") == "local":
+        payload["config_id"] = os.environ.get(
+            "MEND_GUARDRAILS_DEFAULT_CONFIG_ID", "sandbox"
+        )
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{HOST}/v1/guard/{stage}",
         data=body,

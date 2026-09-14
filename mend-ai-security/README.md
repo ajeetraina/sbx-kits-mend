@@ -87,7 +87,7 @@ keys with `Unauthorized`.
 |---|---|---|
 | `MEND_URL` | no | Tenant URL (e.g. `https://saas.mend.io`, or `https://saas-eu.mend.io` for EU/IL/legacy). **Only set it together with `MEND_EMAIL` + `MEND_USER_KEY`** — see the note below. |
 | `MEND_EMAIL` | no | Service-user email. |
-| `MEND_USER_KEY` | **yes** | Service-user key. Passed as-is (no proxy masking) — it is readable in the sandbox, so scope it to a Service User. |
+| `MEND_USER_KEY` | **yes** | Service-user key. Pass with `-e` (not a kit arg). |
 | `MEND_ORGANIZATION` | no | Organization UUID (needed for some scopes). |
 
 **Option A — `mend auth login` (recommended).** Inside the sandbox, run

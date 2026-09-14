@@ -11,30 +11,39 @@ The Python SDK / `mend-guardrails-server` **parse `MEND_KEY` inside the VM**
 It is **not** the CLI Service User key (`MEND_USER_KEY`). Entitlement does not
 work with Docker's `proxy-managed` sentinel in that environment variable.
 
-Default uses the kit's local `sandbox.json` (`policySource=local`). Pass the
-activation key at launch:
+Default is online: `policySource=api` and `offline=false` (platform policy).
+Pass the activation key at launch:
 
 ```bash
 sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
+```
+
+Opt in to the kit `sandbox.json` (local files require offline mode):
+
+```bash
+sbx run codex --kit ./mend-guardrails \
+  --kit-arg mend-guardrails.policySource=local \
+  --kit-arg mend-guardrails.offline=true \
+  -e MEND_KEY="<license>" .
 ```
 
 If `MEND_KEY` is unset, `mend-guardrails-sandbox-start` copies
 `MEND_GUARDRAILS_KEY` onto `MEND_KEY` for the **server process only** (hosts
 that already export a different Mend key). The SDK still reads `MEND_KEY`.
 
-Trade-off: the key is readable inside the sandbox. Scope it to Guardrails.
-
 Do **not** put `MEND_KEY` in `args:` / `--kit-arg` (kit args are not a secret
 store).
 
 `offline=true` (`MEND_GUARDRAILS_OFFLINE=true`) skips platform registration and
-telemetry. It does **not** switch policy source. **`MEND_KEY` is still
-required**. Do not combine `offline=true` with `policySource=api`.
+telemetry. **`MEND_KEY` is still required**. Local policy files are not
+supported in online mode; `mend-guardrails-sandbox-start` sets
+`MEND_GUARDRAILS_OFFLINE=true` when `policySource=local`. Do not combine
+`offline=true` with `policySource=api`.
 
-`policySource=api` (and `offline=false`) loads the org policy from the Mend
-Platform and is what feeds AI Runtime dashboard/events. On the platform,
-default guardrails are off until an admin enables them — that applies to `api`
-mode, not to the committed `sandbox.json`.
+`policySource=api` (and `offline=false`) is the kit default. It loads the org
+policy from the Mend Platform and feeds AI Runtime dashboard/events. On the
+platform, default guardrails are off until an admin enables them — that
+applies to `api` mode, not to the committed `sandbox.json`.
 
 ## Model provider keys (OpenAI / Codex)
 
