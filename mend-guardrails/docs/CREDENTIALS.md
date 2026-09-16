@@ -1,15 +1,20 @@
 # Mend Guardrails credentials in Docker Sandboxes
 
-Status: **do not proxy-manage Mend credentials**. The kit opens egress and
-forwards the **model-provider** `Authorization` sentinel unchanged.
+This kit opens egress to Mend and related package hosts. It does **not**
+proxy-manage Mend credentials. The model-provider `Authorization` sentinel is
+forwarded unchanged so the host sbx proxy can inject the real key.
 
-## MEND_KEY (Guardrails license)
+## MEND_KEY (Guardrails activation key)
 
-The Python SDK / `mend-guardrails-server` **parse `MEND_KEY` inside the VM**
-(JWT / Caesar-wrapped license). Get it from the Mend platform:
+The Python SDK / `mend-guardrails-server` read `MEND_KEY` **inside the VM**.
+Get it from the Mend platform:
 [Integrations → Mend AI Guardrails → Get Activation Key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails).
-It is **not** the CLI Service User key (`MEND_USER_KEY`). Entitlement does not
-work with Docker's `proxy-managed` sentinel in that environment variable.
+It is **not** the CLI Service User key (`MEND_USER_KEY`). Pass the real
+activation key with `sbx run -e` — do not use Docker's `proxy-managed`
+sentinel for this variable.
+
+The activation key is required at **install** time as well as for SDK
+entitlement. Kit install exits early when `MEND_KEY` is unset.
 
 Default is online: `policySource=api` and `offline=false` (platform policy).
 Pass the activation key at launch:
@@ -18,7 +23,7 @@ Pass the activation key at launch:
 sbx run codex --kit ./mend-guardrails -e MEND_KEY="<license>" .
 ```
 
-Opt in to the kit `sandbox.json` (local files require offline mode):
+Opt in to the kit `sandbox.json` (local policy with offline mode):
 
 ```bash
 sbx run codex --kit ./mend-guardrails \
@@ -34,47 +39,41 @@ that already export a different Mend key). The SDK still reads `MEND_KEY`.
 Do **not** put `MEND_KEY` in `args:` / `--kit-arg` (kit args are not a secret
 store).
 
-`offline=true` (`MEND_GUARDRAILS_OFFLINE=true`) skips platform registration and
-telemetry. **`MEND_KEY` is still required**. Local policy files are not
-supported in online mode; `mend-guardrails-sandbox-start` sets
-`MEND_GUARDRAILS_OFFLINE=true` when `policySource=local`. Do not combine
-`offline=true` with `policySource=api`.
+`offline=true` (`MEND_GUARDRAILS_OFFLINE=true`) runs without platform
+registration and telemetry. **`MEND_KEY` is still required**. Use
+`offline=true` with `policySource=local`. Use `policySource=api` with
+`offline=false` (the kit default).
 
-`policySource=api` (and `offline=false`) is the kit default. It loads the org
-policy from the Mend Platform and feeds AI Runtime dashboard/events. On the
-platform, default guardrails are off until an admin enables them — that
-applies to `api` mode, not to the committed `sandbox.json`.
+`policySource=api` loads the org policy from the Mend Platform and feeds AI
+Runtime dashboard events. Enable the detectors you need in the platform
+policy for online mode.
 
 ## Model provider keys (OpenAI / Codex)
 
 The kit sets `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` for the **agent**.
 `mend-guardrails-sandbox-start` **unsets** `OPENAI_BASE_URL` in the **server**
-process so the OpenAI SDK upstream is `https://api.openai.com/v1`, not
-loopback.
+process so the OpenAI SDK upstream is `https://api.openai.com/v1`.
 
-`OPENAI_API_KEY` must **not** be empty in the server process. The OpenAI
-client validates credentials in its constructor, so an unset value makes every
-`/v1/chat/completions` request fail with HTTP 500 before any guardrail runs
-(`openai.OpenAIError: Missing credentials`). Startup keeps whatever the
-sandbox provided and otherwise exports the placeholder
+Keep a non-empty `OPENAI_API_KEY` in the server process (the OpenAI client
+validates credentials at construction). Startup keeps whatever the sandbox
+provided and otherwise exports the placeholder
 `mend-guardrails-forwarded-per-request`.
 
-`MEND_GUARDRAILS_FORWARD_HEADERS=Authorization`: the agent sends Docker's
-**sentinel**; the server forwards that header, overriding the constructor
-value; the **host sbx proxy** swaps in the real key. Mend never sees, stores,
-or needs the customer's model API key.
+With `MEND_GUARDRAILS_FORWARD_HEADERS=Authorization`, the agent sends Docker's
+**sentinel**; the server forwards that header; the **host sbx proxy** swaps in
+the real key. Mend never sees, stores, or needs the customer's model API key.
 
 Do not set a real `OPENAI_API_KEY` on the guardrails server.
 
 Leave `HTTP_PROXY` / `HTTPS_PROXY` to the sandbox so network policy and
 credential inject keep working. This kit does not set those variables.
 
-## Never inject on `*.mend.io`
+## Composing with `mend-ai-security`
 
-Declaring `credentials.apiKey.inject` on `*.mend.io` makes the sbx proxy
-TLS-intercept those hosts. That breaks the Mend CLI login handshake used by
-the `mend-ai-security` mixin (same credentials work on the host). This kit
-must remain composable with that mixin: allow-list only, no inject.
+Do not declare `credentials.apiKey.inject` on `*.mend.io`. TLS intercept on
+those hosts interferes with the Mend CLI login handshake used by the
+`mend-ai-security` mixin. This kit allow-lists Mend hosts only (no inject) so
+both mixins can stack.
 
 Stack both kits with one `MEND_KEY` (Guardrails) at runtime. CLI login is
 separate (`mend auth login` or `MEND_EMAIL` + `MEND_USER_KEY`):

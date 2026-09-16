@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Sandbox fixture: an ordinary OpenAI-SDK app that sends malicious prompts.
+"""Sandbox fixture: an ordinary OpenAI-SDK app that sends test prompts.
 
 No Mend API is called explicitly — no /v1/guard/*, no mend-guard-text, no
 `guardrails` block in the request body. The app only does what any OpenAI
 client does: point at OPENAI_BASE_URL and call chat.completions.create.
-Interception happens because the kit set OPENAI_BASE_URL to the loopback
+Inspection happens because the kit set OPENAI_BASE_URL to the loopback
 guardrails server.
 
-A block arrives as HTTP 400 with detail.error=guardrail_enforcement_triggered.
-Any other non-200 is reported verbatim: on this endpoint input guardrails run
-concurrently with the upstream model call, so upstream failures surface here
-too and are not guardrail verdicts.
+A policy block arrives as HTTP 400 with
+detail.error=guardrail_enforcement_triggered. Other non-200 responses are
+reported verbatim (provider or transport errors are not treated as
+guardrail verdicts).
 
 Payloads are jailbreak phrasing and a fake key shape only.
 """
