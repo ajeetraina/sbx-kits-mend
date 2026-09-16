@@ -22,3 +22,9 @@ for _h in api.openai.com 127.0.0.1 localhost ::1; do
   _mend_guardrails_append_noproxy no_proxy "$_h"
 done
 unset _h
+
+# Codex provider env_key=OPENAI_API_KEY. Docker sentinel — host proxy swaps the
+# real key on upstream after Guardrails forwards Authorization.
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+  export OPENAI_API_KEY="proxy-managed"
+fi

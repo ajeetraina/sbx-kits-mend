@@ -50,20 +50,47 @@ policy for online mode.
 
 ## Model provider keys (OpenAI / Codex)
 
-The kit sets `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` for the **agent**.
+The kit sets `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` for the **agent** so
+OpenAI-compatible clients and the fixture hit the inspector.
+
+**Codex TUI intercept is opt-in** (`--kit-arg mend-guardrails.interceptTui=true`,
+env `MEND_GUARDRAILS_INTERCEPT_TUI=true`). Default is off. When enabled,
+startup merges user-level `$CODEX_HOME/config.toml`:
+
+```toml
+model_provider = "mend_guardrails"
+
+[model_providers.mend_guardrails]
+name = "Mend Guardrails"
+base_url = "http://127.0.0.1:8787/v1"
+wire_api = "responses"
+supports_websockets = false
+env_key = "OPENAI_API_KEY"
+```
+
+Project `.codex/config.toml` cannot set those provider keys. When intercept is
+off, the kit removes a previously installed `mend_guardrails` provider so
+ChatGPT subscription TUI auth works again.
+
 `mend-guardrails-sandbox-start` **unsets** `OPENAI_BASE_URL` in the **server**
 process so the OpenAI SDK upstream is `https://api.openai.com/v1`.
 
 Keep a non-empty `OPENAI_API_KEY` in the server process (the OpenAI client
 validates credentials at construction). Startup keeps whatever the sandbox
-provided and otherwise exports the placeholder
-`mend-guardrails-forwarded-per-request`.
+provided and otherwise exports the Docker sentinel `proxy-managed`.
 
 With `MEND_GUARDRAILS_FORWARD_HEADERS=Authorization`, the agent sends Docker's
 **sentinel**; the server forwards that header; the **host sbx proxy** swaps in
 the real key. Mend never sees, stores, or needs the customer's model API key.
 
-Do not set a real `OPENAI_API_KEY` on the guardrails server.
+The kit exports `OPENAI_API_KEY=proxy-managed` so Codex's custom provider can
+start when intercept is on. That placeholder is not a real secret.
+
+**When `interceptTui=true`, the host OpenAI credential must be a platform API
+key with Responses permission `api.responses.write`** (org/project Writer or
+Owner; unrestricted key). Missing that scope returns upstream HTTP **401**.
+ChatGPT-only login / Sol-Luna catalog models are not sufficient on this path;
+set an API model such as `gpt-4o-mini` and ensure billing/credits.
 
 Leave `HTTP_PROXY` / `HTTPS_PROXY` to the sandbox so network policy and
 credential inject keep working. This kit does not set those variables.

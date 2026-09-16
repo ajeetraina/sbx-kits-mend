@@ -32,6 +32,23 @@ args:
       to local for the kit sandbox.json file (startup then sets offline=true).
     default: api
     enum: [local, api]
+  pythonSrc:
+    description: >-
+      Absolute path to a local mend-guardrails-python checkout for editable
+      install instead of the Mend downloads wheel. Empty (default) installs
+      from PyPI + downloads.mend.io. Mount the same path as an extra sbx
+      workspace (not :ro) so install can write egg-info, e.g.
+      sbx run ... --kit-arg mend-guardrails.pythonSrc="$SRC" . "$SRC".
+    default: ""
+  interceptTui:
+    description: >-
+      Opt in to route Codex TUI model calls through loopback Guardrails
+      (user-level model_provider=mend_guardrails). Default false keeps
+      ChatGPT subscription TUI auth. When true, requires a host OpenAI
+      platform API key with api.responses.write (and billing), plus an API
+      model name (not Sol/Luna-only ChatGPT catalog).
+    default: "false"
+    enum: ["false", "true"]
 
 # Do not declare credentials.apiKey.inject on *.mend.io when stacking with
 # mend-ai-security (see docs/CREDENTIALS.md). Pass real MEND_KEY via sbx -e;
@@ -51,12 +68,16 @@ permissions:
 environment:
   variables:
     OPENAI_BASE_URL: "http://127.0.0.1:8787/v1"
+    # Sentinel for apps/fixture and for opt-in TUI intercept (env_key).
+    # Host proxy swaps the real key on api.openai.com. Not a real secret.
+    OPENAI_API_KEY: "proxy-managed"
     MEND_GUARDRAILS_FORWARD_HEADERS: Authorization
     MEND_GUARDRAILS_POLICY_DIR: /home/agent/.mend-guardrails/policies
     MEND_GUARDRAILS_DEFAULT_CONFIG_ID: sandbox
     MEND_GUARDRAILS_INSTANCE_NAME: docker-sandbox
     MEND_GUARDRAILS_OFFLINE: "${{ kit.args.offline }}"
     MEND_GUARDRAILS_POLICY_SOURCE: "${{ kit.args.policySource }}"
+    MEND_GUARDRAILS_INTERCEPT_TUI: "${{ kit.args.interceptTui }}"
     # Do not set NO_PROXY / HTTP(S)_PROXY here. HTTP(S)_PROXY is sandbox-managed.
     # Agent NO_PROXY for api.openai.com is appended from agent-env.sh (shells)
     # and the PATH curl wrapper; the server startup script strips it.
@@ -78,18 +99,36 @@ setup:
           echo "mend-guardrails kit requires MEND_KEY (sbx run -e)" >&2
           exit 1
         fi
-        echo "pip install mend-guardrails[server] (PyPI, Mend extra-index, spaCy)"
-        enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["MEND_KEY"], safe=""))')
-        python3 -m pip install --break-system-packages \
-          --progress-bar on --timeout 120 --retries 5 \
-          --extra-index-url "https://mend:${enc}@downloads.mend.io/guardrails/" \
-          'mend-guardrails[server]'
+        SRC='${{ kit.args.pythonSrc }}'
+        if [ -n "$SRC" ]; then
+          if [ ! -d "$SRC" ] || [ ! -f "$SRC/pyproject.toml" ]; then
+            echo "mend-guardrails: pythonSrc='$SRC' must be a mounted checkout with pyproject.toml" >&2
+            echo "mend-guardrails: pass it as an extra sbx workspace (not :ro), e.g." >&2
+            echo "  sbx run ... --kit-arg mend-guardrails.pythonSrc=\"\$SRC\" . \"\$SRC\"" >&2
+            exit 1
+          fi
+          echo "pip install -e ${SRC}[server] (local source; deps from PyPI/GitHub)"
+          python3 -m pip install --break-system-packages \
+            --progress-bar on --timeout 120 --retries 5 \
+            -e "${SRC}[server]"
+        else
+          echo "pip install mend-guardrails[server]>=0.0.17b0 (PyPI, Mend extra-index, spaCy)"
+          enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["MEND_KEY"], safe=""))')
+          python3 -m pip install --break-system-packages \
+            --progress-bar on --timeout 120 --retries 5 \
+            --extra-index-url "https://mend:${enc}@downloads.mend.io/guardrails/" \
+            'mend-guardrails[server]>=0.0.17b0'
+        fi
       description: pip install mend-guardrails[server]
     - command: |
         set -euo pipefail
         chmod +x /home/agent/.local/bin/mend-guard-text \
           /home/agent/.local/bin/mend-guardrails-sandbox-start \
+          /home/agent/.local/bin/mend-guardrails-configure-codex \
           /home/agent/.local/bin/curl
+        # Codex TUI uses Responses API; provider URL must be user-level
+        # $CODEX_HOME/config.toml (project .codex ignores openai_base_url).
+        /home/agent/.local/bin/mend-guardrails-configure-codex
         AGENT_ENV=/home/agent/.mend-guardrails/agent-env.sh
         for rc in /home/agent/.profile /home/agent/.bashrc /home/agent/.zshrc; do
           touch "$rc"
@@ -101,7 +140,7 @@ setup:
           printf '. %s\n' "$AGENT_ENV" > /etc/profile.d/mend-guardrails-noproxy.sh
         fi
         command -v mend-guardrails-server
-      description: chmod helpers and shell rc hooks
+      description: chmod helpers, Codex config, shell rc hooks
   startup:
     - command: ["/home/agent/.local/bin/mend-guardrails-sandbox-start"]
       background: true
@@ -111,12 +150,24 @@ agentInstructions:
   content: |
     # Mend Guardrails
 
-    This sandbox runs `mend-guardrails-server` on **127.0.0.1:8787**. Codex is
-    pointed at it with `OPENAI_BASE_URL=http://127.0.0.1:8787/v1`. Keep that
-    value so model calls go through inspection.
+    This sandbox runs `mend-guardrails-server` on **127.0.0.1:8787**.
+    `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` is set so OpenAI-compatible
+    clients (and the kit fixture) are inspected. Keep that value.
 
-    Docker's host proxy still injects the real OpenAI (or compatible) API key
-    from the **sentinel** `Authorization` header. Mend never holds that key.
+    **Codex TUI intercept is opt-in** (`interceptTui=true` /
+    `MEND_GUARDRAILS_INTERCEPT_TUI=true`). Default is off so ChatGPT
+    subscription TUI auth (Sol/Luna) keeps working. When opt-in is enabled,
+    user-level `~/.codex/config.toml` uses `model_provider = "mend_guardrails"`
+    (HTTP-only, `supports_websockets = false`). That path needs a host OpenAI
+    **platform API key** with scope **`api.responses.write`** (org Writer /
+    unrestricted key) and billing, plus an API model such as `gpt-4o-mini`
+    (not the Sol/Luna-only ChatGPT catalog).
+
+    Docker's host proxy injects the real key from the **sentinel**
+    `Authorization` / `OPENAI_API_KEY=proxy-managed`. Mend never holds that
+    key. A fluent model refusal is **not** a Guardrails catch; a catch is
+    HTTP **400** with `guardrail_enforcement_triggered`. Upstream **401**
+    missing `api.responses.write` is an OpenAI key/role problem.
 
     ## License
 
@@ -134,6 +185,18 @@ agentInstructions:
     ```bash
     until curl -fsS --noproxy 127.0.0.1,localhost,::1 http://127.0.0.1:8787/health; do sleep 1; done
     ```
+
+    ## Verify inspection (fixture)
+
+    Prefer the OpenAI-client fixture over eyeballing TUI refusals:
+
+    ```bash
+    ! python3 mend-guardrails/tests/malicious_openai_app.py
+    ```
+
+    Blocks print HTTP 400 / `guardrail_enforcement_triggered`. Upstream 429
+    on a benign case means policy allowed the prompt but the API key has no
+    credits — not a Guardrails miss.
 
     ## MCP / tool-result scan
 

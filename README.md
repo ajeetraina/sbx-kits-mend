@@ -5,7 +5,7 @@ Two [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) **`kind: mixin`** 
 | Kit | What it adds |
 |---|---|
 | [`mend-ai-security/`](./mend-ai-security/) | Mend CLI + `mend ai scan` (AI-BOM / Shadow AI). Works on any agent. |
-| [`mend-guardrails/`](./mend-guardrails/) | Loopback `mend-guardrails-server` on Codex / OpenAI-compatible agents (`OPENAI_BASE_URL`). Inspects prompt bodies (secrets, PII, prompt injection) and exposes `/v1/guard/*` plus `mend-guard-text` for MCP/tool-text checks. |
+| [`mend-guardrails/`](./mend-guardrails/README.md) | Loopback `mend-guardrails-server` on Codex / OpenAI-compatible agents (`OPENAI_BASE_URL`; optional TUI intercept via `interceptTui`). Inspects prompt bodies (secrets, PII, prompt injection) and exposes `/v1/guard/*` plus `mend-guard-text` for MCP/tool-text checks. |
 
 The kits use **different secrets**. They are not interchangeable.
 
@@ -61,8 +61,11 @@ sbx run codex \
 ```
 
 The Guardrails mixin sets `requires.agent: codex` and rewrites `OPENAI_BASE_URL`
-to the loopback inspector. Drop `requires.agent` in a fork to reuse that rewrite
-on another OpenAI-compatible agent.
+to the loopback inspector. Codex TUI intercept is opt-in — see
+[Codex TUI intercept](./mend-guardrails/README.md#codex-tui-intercept-opt-in)
+in the [mend-guardrails README](./mend-guardrails/README.md). Drop
+`requires.agent` in a fork to reuse that rewrite on another OpenAI-compatible
+agent.
 
 ## License
 
