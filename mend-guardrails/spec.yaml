@@ -47,9 +47,6 @@ permissions:
       - github.com
       - objects.githubusercontent.com
       - release-assets.githubusercontent.com
-      - huggingface.co
-      - "*.huggingface.co"
-      - cdn-lfs.huggingface.co
 
 environment:
   variables:
@@ -81,7 +78,7 @@ setup:
           echo "mend-guardrails kit requires MEND_KEY (sbx run -e)" >&2
           exit 1
         fi
-        echo "pip install mend-guardrails[server] (PyPI, Mend extra-index, spaCy, Hugging Face)"
+        echo "pip install mend-guardrails[server] (PyPI, Mend extra-index, spaCy)"
         enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["MEND_KEY"], safe=""))')
         python3 -m pip install --break-system-packages \
           --progress-bar on --timeout 120 --retries 5 \
