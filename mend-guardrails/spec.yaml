@@ -50,9 +50,9 @@ args:
     default: "false"
     enum: ["false", "true"]
 
+# Pass real MEND_KEY via sbx -e; do not put secrets in kit args.
 # Do not declare credentials.apiKey.inject on *.mend.io when stacking with
-# mend-ai-security (see docs/CREDENTIALS.md). Pass real MEND_KEY via sbx -e;
-# do not proxy-manage it.
+# mend-ai-security (TLS inject breaks Mend CLI login).
 
 permissions:
   network:

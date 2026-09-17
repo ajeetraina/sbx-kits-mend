@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="600" viewBox="0 0 1240 600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a94a6"/>
+    </marker>
+    <marker id="arrowDash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9aa3af"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f6fdb"/>
+    </marker>
+  </defs>
+
+  <rect width="1240" height="600" fill="#ffffff"/>
+
+  <!-- Host machine -->
+  <rect x="28" y="36" width="945" height="508" rx="26" fill="#e9f1fc" stroke="#7aa7e0" stroke-width="2.5"/>
+  <text x="62" y="518" fill="#1e4fa3" font-size="21" font-weight="700">Host machine</text>
+
+  <!-- Workspace -->
+  <rect x="66" y="230" width="152" height="82" rx="9" fill="#ffffff" stroke="#cfd6df" stroke-width="1.5"/>
+  <text x="142" y="264" text-anchor="middle" fill="#1f2937" font-size="16" font-weight="700">Workspace</text>
+  <text x="142" y="286" text-anchor="middle" fill="#6b7280" font-size="13">your code</text>
+  <line x1="218" y1="271" x2="272" y2="271" stroke="#8a94a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- microVM sandbox -->
+  <rect x="278" y="78" width="280" height="380" rx="13" fill="#ffffff" stroke="#6b7787" stroke-width="2"/>
+  <text x="298" y="110" fill="#1f2937" font-size="18" font-weight="700">microVM sandbox</text>
+  <text x="540" y="110" text-anchor="end" fill="#8a94a6" font-size="13">container</text>
+
+  <!-- container dashed box -->
+  <rect x="298" y="126" width="240" height="188" rx="9" fill="none" stroke="#9aa3af" stroke-width="1.5" stroke-dasharray="5 4"/>
+
+  <!-- Agent / Codex -->
+  <rect x="314" y="142" width="208" height="52" rx="7" fill="#ffffff" stroke="#cfd6df" stroke-width="1.5"/>
+  <text x="418" y="174" text-anchor="middle" fill="#2f6fdb" font-size="16" font-weight="700">Agent / Codex</text>
+
+  <!-- arrow agent -> guardrails server -->
+  <line x1="418" y1="194" x2="418" y2="214" stroke="#2f6fdb" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- mend-guardrails-server (loopback) -->
+  <rect x="314" y="216" width="208" height="78" rx="7" fill="#eef4ff" stroke="#7aa7e0" stroke-width="1.8"/>
+  <text x="418" y="242" text-anchor="middle" fill="#1e4fa3" font-size="14" font-weight="700">mend-guardrails-server</text>
+  <text x="418" y="262" text-anchor="middle" fill="#3b7fd6" font-size="12" font-family="'SF Mono', Menlo, monospace">127.0.0.1:8787</text>
+  <text x="418" y="280" text-anchor="middle" fill="#6b7280" font-size="11.5">inspect / block or allow</text>
+
+  <!-- optional MCP path -->
+  <rect x="298" y="334" width="240" height="98" rx="9" fill="#ece7dd" stroke="#d8cfc0" stroke-width="1.5"/>
+  <text x="418" y="366" text-anchor="middle" fill="#6b6255" font-size="13.5" font-weight="600" font-family="'SF Mono', Menlo, monospace">mend-guard-text</text>
+  <text x="418" y="388" text-anchor="middle" fill="#8a8272" font-size="12">optional MCP / tool-text scan</text>
+  <text x="418" y="408" text-anchor="middle" fill="#8a8272" font-size="12">same policy as loopback server</text>
+
+  <!-- sandbox -> proxy (allowed traffic after inspect) -->
+  <line x1="558" y1="255" x2="612" y2="255" stroke="#8a94a6" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="585" y="244" text-anchor="middle" fill="#6b7280" font-size="11">if allowed</text>
+
+  <!-- sbx proxy -->
+  <rect x="612" y="196" width="210" height="118" rx="9" fill="#ffffff" stroke="#cfd6df" stroke-width="1.8"/>
+  <text x="717" y="228" text-anchor="middle" fill="#1f2937" font-size="16" font-weight="700">sbx proxy</text>
+  <text x="717" y="250" text-anchor="middle" fill="#6b7280" font-size="12.5">egress allow-list</text>
+  <text x="717" y="270" text-anchor="middle" fill="#6b7280" font-size="12.5">OpenAI key stays on host</text>
+  <text x="717" y="290" text-anchor="middle" fill="#6b7280" font-size="12.5">(inject on upstream)</text>
+
+  <!-- proxy -> OpenAI -->
+  <path d="M822 230 C 900 210, 940 200, 992 194" fill="none" stroke="#9aa3af" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrowDash)"/>
+  <!-- proxy / kit -> Mend Platform -->
+  <path d="M822 280 C 900 320, 940 350, 992 366" fill="none" stroke="#9aa3af" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrowDash)"/>
+
+  <!-- api.openai.com -->
+  <rect x="992" y="148" width="176" height="90" rx="9" fill="#ffffff" stroke="#cfd6df" stroke-width="1.5"/>
+  <text x="1080" y="178" text-anchor="middle" fill="#1f2937" font-size="15" font-weight="700">api.openai.com</text>
+  <text x="1080" y="198" text-anchor="middle" fill="#6b7280" font-size="12">model provider</text>
+  <text x="1080" y="218" text-anchor="middle" fill="#6b7280" font-size="12">after policy allow</text>
+
+  <!-- Mend Platform -->
+  <rect x="992" y="320" width="176" height="100" rx="9" fill="#ffffff" stroke="#cfd6df" stroke-width="1.5"/>
+  <text x="1080" y="350" text-anchor="middle" fill="#1f2937" font-size="15" font-weight="700">Mend Platform</text>
+  <text x="1080" y="370" text-anchor="middle" fill="#6b7280" font-size="12">org policy (online)</text>
+  <text x="1080" y="388" text-anchor="middle" fill="#6b7280" font-size="12">AI Runtime dashboard</text>
+  <text x="1080" y="406" text-anchor="middle" fill="#6b7280" font-size="12">activation via MEND_KEY</text>
+
+  <!-- caption -->
+  <text x="992" y="460" fill="#1e4fa3" font-size="15.5" font-weight="700">Prompts inspected first</text>
+  <text x="992" y="486" fill="#3b7fd6" font-size="13.5">OpenAI-compatible clients hit</text>
+  <text x="992" y="505" fill="#3b7fd6" font-size="13.5">loopback Guardrails; the model</text>
+  <text x="992" y="524" fill="#3b7fd6" font-size="13.5">API key never leaves the host.</text>
+</svg>

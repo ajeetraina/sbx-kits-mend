@@ -1,22 +1,22 @@
 # Mend Docker Sandbox kits
 
-Two [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) **`kind: mixin`** kits for Mend:
+Two [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) mixin kits for Mend:
 
 | Kit | What it adds |
 |---|---|
 | [`mend-ai-security/`](./mend-ai-security/) | Mend CLI + `mend ai scan` (AI-BOM / Shadow AI). Works on any agent. |
-| [`mend-guardrails/`](./mend-guardrails/README.md) | Loopback `mend-guardrails-server` on Codex / OpenAI-compatible agents (`OPENAI_BASE_URL`; optional TUI intercept via `interceptTui`). Inspects prompt bodies (secrets, PII, prompt injection) and exposes `/v1/guard/*` plus `mend-guard-text` for MCP/tool-text checks. |
+| [`mend-guardrails/`](./mend-guardrails/README.md) | Mend AI Runtime Protection for Codex / OpenAI-compatible agents. Inspects prompts (secrets, PII, prompt injection); optional TUI intercept; `mend-guard-text` for MCP/tool text. |
 
 The kits use **different secrets**. They are not interchangeable.
 
 | Variable | Kit | What it is |
 |---|---|---|
-| `MEND_KEY` | Guardrails | [Activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails) from the Mend platform (Integrations → Mend AI Guardrails). Parsed **inside** the VM. |
+| `MEND_KEY` | Guardrails | [Activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails) from the Mend platform (Integrations → Mend AI Guardrails). |
 | `MEND_USER_KEY` | AI Security (CLI) | Service User key, with `MEND_EMAIL` (+ `MEND_URL` / `MEND_ORGANIZATION`). Or skip env vars and run `mend auth login` inside the sandbox. |
 
-Do **not** put either secret in kit `args:` / `--kit-arg`. When composing both kits, do not declare `credentials.apiKey.inject` on `*.mend.io` (see the credentials docs). See [`mend-ai-security/docs/CREDENTIALS.md`](./mend-ai-security/docs/CREDENTIALS.md) and [`mend-guardrails/docs/CREDENTIALS.md`](./mend-guardrails/docs/CREDENTIALS.md).
+Do **not** put either secret in `--kit-arg`. Pass them with `sbx run -e`.
 
-Compose them on Codex. `MEND_KEY` is passed **once** at runtime (Guardrails). The CLI can still `mend auth login` inside the VM:
+Compose them on Codex (`MEND_KEY` once for Guardrails; CLI can still log in inside the VM):
 
 ```bash
 sbx run codex \
@@ -60,12 +60,8 @@ sbx run codex \
   .
 ```
 
-The Guardrails mixin sets `requires.agent: codex` and rewrites `OPENAI_BASE_URL`
-to the loopback inspector. Codex TUI intercept is opt-in — see
-[Codex TUI intercept](./mend-guardrails/README.md#codex-tui-intercept-opt-in)
-in the [mend-guardrails README](./mend-guardrails/README.md). Drop
-`requires.agent` in a fork to reuse that rewrite on another OpenAI-compatible
-agent.
+Full Guardrails usage (policy modes, TUI intercept, verification): see the
+[mend-guardrails README](./mend-guardrails/README.md).
 
 ## License
 
