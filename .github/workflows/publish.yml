@@ -1,6 +1,6 @@
-name: Publish kit
+name: Publish kits
 
-# Publishes the mend-ai-security kit as an OCI artifact to Docker Hub.
+# Publishes each mixin as an OCI artifact to Docker Hub.
 # Auth uses the repo secrets DOCKERHUB_USERNAME (= ajeetraina777) and
 # DOCKERHUB_TOKEN. `sbx kit push` packages the kit and uploads via ORAS using
 # the ambient `docker login` credentials — no microVM / KVM needed.
@@ -9,8 +9,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "spec.yaml"
-      - "files/**"
+      - "mend-ai-security/**"
+      - "mend-guardrails/**"
       - ".github/workflows/publish.yml"
   workflow_dispatch: {}
 
@@ -21,6 +21,14 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kit: mend-ai-security
+            image: mend-ai-security-kit
+          - kit: mend-guardrails
+            image: mend-guardrails-kit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate kit
-        run: sbx kit validate ./
+        run: sbx kit validate "./${{ matrix.kit }}"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -50,17 +58,17 @@ jobs:
       - name: Push kit to Docker Hub
         run: |
           set -euo pipefail
-          sbx kit push ./ \
-            "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mend-ai-security-kit:latest" \
+          sbx kit push "./${{ matrix.kit }}" \
+            "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest" \
             | tee /tmp/push.log
 
       - name: Summarize published reference
         if: always()
         run: |
           {
-            echo "## mend-ai-security kit published"
+            echo "## ${{ matrix.kit }} published"
             echo ""
-            echo "Namespace: \`docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mend-ai-security-kit\`"
+            echo "Namespace: \`docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}\`"
             echo ""
             echo "Pin consumers to the digest below (\`:latest\` is rejected by the loader):"
             echo ""

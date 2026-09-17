@@ -1,176 +1,68 @@
-# Mend AI Security
+# Mend Docker Sandbox kits
 
-A [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) **`kind: mixin`**
-kit that installs the [Mend CLI](https://docs.mend.io/platform/latest/download-the-mend-cli)
-and enables **AI-security scanning** inside the sandbox — discover AI models,
-frameworks, and system prompts in your workspace ("Shadow AI") and generate an
-**AI-BOM** (AI Bill of Materials) with `mend ai scan`.
+Two [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) mixin kits for Mend:
 
-Compose it onto any agent (Claude Code, Codex, …) to give that agent the
-ability to run Mend AI security scans against the code it is working on.
+| Kit | What it adds |
+|---|---|
+| [`mend-ai-security/`](./mend-ai-security/) | Mend CLI + `mend ai scan` (AI-BOM / Shadow AI). Works on any agent. |
+| [`mend-guardrails/`](./mend-guardrails/README.md) | Mend AI Runtime Protection for Codex / OpenAI-compatible agents. Inspects prompts (secrets, PII, prompt injection); optional TUI intercept; `mend-guard-text` for MCP/tool text. |
 
-## Architecture
+The kits use **different secrets**. They are not interchangeable.
 
-<img src="./assets/architecture.png" alt="Mend AI Security sbx kit architecture" width="100%" />
-
-The Mend CLI runs inside the sandbox and scans the workspace in place. It
-performs **its own login handshake** (email + user key → token stored in
-`~/.mend/config/settings.json`), so the kit deliberately declares **no
-proxy-managed credential** — the sbx proxy simply *tunnels* `*.mend.io`
-transparently. (Injecting a credential would make the proxy TLS-intercept those
-hosts, which corrupts Mend's login and fails with `Unauthorized` — see
-[`docs/CREDENTIALS.md`](docs/CREDENTIALS.md).) An egress allow-list bounds
-outbound traffic to `*.mend.io` (CLI download/auto-update plus auth and AI-BOM
-upload), and everything else is denied.
-
-## What it adds
-
-- The `mend` CLI on `PATH` (`/usr/local/bin/mend`).
-- `mend ai scan` — AI usage discovery + AI-BOM generation.
-- Egress allow-list for `*.mend.io` so scans and CLI auto-update work under a
-  `deny-all` network policy.
-- Agent instructions on how to run scans and authenticate (via the CLI's own
-  `mend auth login` or env vars — the kit injects no credential of its own).
-
-The same CLI also provides `mend dep` (SCA), `mend code` (SAST), and
-`mend image` (container) scanning.
-
-## Usage
-
-This is a mixin, so run it with `--kit` on top of a base agent. Pick one
-reference form:
-
-**Published OCI artifact (recommended):**
-
-```bash
-sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest .
-```
-
-**Git URL (the kit lives at the repo root):**
-
-```bash
-sbx run claude \
-  --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>" .
-```
-
-**Local clone:**
-
-```bash
-git clone https://github.com/ajeetraina/sbx-kits-mend.git
-sbx run claude --kit ./sbx-kits-mend/ .
-```
-
-## Authentication
-
-The Mend CLI authenticates **itself** — the kit injects no credential; it only
-opens egress to `*.mend.io`. Use a **Service User** (Mend → Settings → Service
-Users), not a personal key: SSO-enforced orgs typically reject personal user
-keys with `Unauthorized`.
-
-| Variable | Secret? | Notes |
+| Variable | Kit | What it is |
 |---|---|---|
-| `MEND_URL` | no | Tenant URL (e.g. `https://saas.mend.io`, or `https://saas-eu.mend.io` for EU/IL/legacy). **Only set it together with `MEND_EMAIL` + `MEND_USER_KEY`** — see the note below. |
-| `MEND_EMAIL` | no | Service-user email. |
-| `MEND_USER_KEY` | **yes** | Service-user key. Passed as-is (no proxy masking) — it is readable in the sandbox, so scope it to a Service User. |
-| `MEND_ORGANIZATION` | no | Organization UUID (needed for some scopes). |
+| `MEND_KEY` | Guardrails | [Activation key](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails) from the Mend platform (Integrations → Mend AI Guardrails). |
+| `MEND_USER_KEY` | AI Security (CLI) | Service User key, with `MEND_EMAIL` (+ `MEND_URL` / `MEND_ORGANIZATION`). Or skip env vars and run `mend auth login` inside the sandbox. |
 
-**Option A — `mend auth login` (recommended).** Inside the sandbox, run
-`mend auth login`, pick your environment, and choose **"Enter credentials
-manually"** (the browser option can't complete headless — its `127.0.0.1`
-callback never reaches the CLI from a host browser). Enter the Service User
-email + key; the token is cached in `~/.mend/config/settings.json`.
+Do **not** put either secret in `--kit-arg`. Pass them with `sbx run -e`.
 
-**Option B — environment variables** at launch:
+Compose them on Codex (`MEND_KEY` once for Guardrails; CLI can still log in inside the VM):
 
 ```bash
-sbx run claude \
-  --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
-  -e MEND_EMAIL="svc@example.com" \
-  -e MEND_USER_KEY="<service-user-key>" \
-  -e MEND_ORGANIZATION="<org-uuid>" .
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
 ```
 
-> **Do not set `MEND_URL` on its own.** The CLI reads the presence of `MEND_URL`
-> as an env-var auth attempt and then also requires `MEND_EMAIL` + `MEND_USER_KEY`;
-> a lone `MEND_URL` makes even a completed `mend auth login` session fail with
-> `invalid auth environment variable params were set`. Use the full triplet
-> (Option B) **or** `mend auth login` with no `MEND_*` vars set (Option A) — never
-> just `MEND_URL`. (This is why the kit sets no `MEND_URL` default.)
-
-> The published OCI artifact is built and pushed to
-> `docker.io/ajeetraina777/mend-ai-security-kit` by
-> [`.github/workflows/publish.yml`](.github/workflows/publish.yml) on every
-> push to `main`. Consumers should pin by digest (`@sha256:...`) rather than
-> `:latest` — see the workflow summary for the digest of each build.
-
-Then, inside the sandbox:
+Both products authenticated at launch (CLI env-var path):
 
 ```bash
-mend connectivity --mend-url="https://saas.mend.io"   # verify auth/network
-mend ai scan --directory .                            # AI security scan + AI-BOM
-```
-
-## Example: scan a project for AI usage
-
-Launch a Claude sandbox with the kit against the project you want to scan, then
-authenticate the CLI and run the AI scan:
-
-```bash
-# 1. Launch a sandbox with the kit, mounting the project to scan.
-#    Pass Service User creds as env vars (Option B)…
-sbx run claude \
-  --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
-  -e MEND_EMAIL="svc@example.com" \
+sbx run codex \
+  --kit ./mend-ai-security \
+  --kit ./mend-guardrails \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  -e MEND_URL="https://saas.mend.io" \
+  -e MEND_EMAIL="<service-user-email>" \
   -e MEND_USER_KEY="<service-user-key>" \
   -e MEND_ORGANIZATION="<org-uuid>" \
-  ~/code/my-ai-app
-
-# 2. …or, instead of env vars, log in interactively inside the sandbox (Option A):
-#    mend auth login   ->   "Enter credentials manually"
-
-# 3. Inside the sandbox: verify connectivity, then scan
-mend connectivity --mend-url="https://saas.mend.io"
-mend ai scan --directory . --scope "MyOrg//my-ai-app"
+  .
 ```
 
-### Scanning multiple directories
-
-`--directory` takes a single path. To scan several repos, mount them as extra
-workspaces and loop — one scan per directory, each recorded as its own
-auto-detected scope/project:
+Git URL form (pin `ref` to a 40-hex SHA):
 
 ```bash
-# Mount multiple workspaces (append :ro to keep one read-only)
-sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
-  ~/app-a ~/app-b ~/shared:ro
-
-# Then, inside the sandbox, scan each — every dir becomes its own Mend project
-for d in ~/app-a ~/app-b ~/shared; do
-  mend ai scan --directory "$d"
-done
+sbx run codex \
+  --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>&dir=mend-ai-security" \
+  --kit "git+https://github.com/ajeetraina/sbx-kits-mend.git#ref=<40-hex-sha>&dir=mend-guardrails" \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
 ```
 
-Sample output — the AI-BOM lists the models, frameworks, and system prompts the
-scanner discovered:
+Published OCI artifacts (pin by digest, not `:latest`):
 
-```text
-Mend AI scan running...
-✓ Detected AI frameworks:  langchain, openai-python
-✓ Detected models:         gpt-4o (OpenAI), all-MiniLM-L6-v2 (Hugging Face)
-✓ Detected system prompts: 3 files
-✓ AI-BOM uploaded to MyOrg//my-ai-app
+```bash
+sbx run codex \
+  --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
+  --kit docker.io/ajeetraina777/mend-guardrails-kit:latest \
+  -e MEND_KEY="<guardrails-activation-key>" \
+  .
 ```
 
-Or, to have the coding agent drive the scan for you, just ask it in the session:
-
-```text
-> Run a Mend AI security scan on this repo and summarize the AI-BOM.
-```
-
-The agent reads this kit's instructions and runs `mend ai scan` on the
-workspace, then summarizes the discovered AI components and risks.
+Full Guardrails usage (policy modes, TUI intercept, verification): see the
+[mend-guardrails README](./mend-guardrails/README.md).
 
 ## License
 
-Apache-2.0. "Mend" and the Mend CLI are products of Mend.io; this kit only
-installs and configures the vendor CLI.
+Apache-2.0. "Mend", the Mend CLI, and Mend Guardrails are products of Mend.io; these kits only install and configure them inside a sandbox.
