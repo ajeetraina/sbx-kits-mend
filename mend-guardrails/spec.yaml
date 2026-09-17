@@ -125,6 +125,7 @@ setup:
         chmod +x /home/agent/.local/bin/mend-guard-text \
           /home/agent/.local/bin/mend-guardrails-sandbox-start \
           /home/agent/.local/bin/mend-guardrails-configure-codex \
+          /home/agent/.local/bin/mend-guardrails-selftest \
           /home/agent/.local/bin/curl
         # Codex TUI uses Responses API; provider URL must be user-level
         # $CODEX_HOME/config.toml (project .codex ignores openai_base_url).
@@ -191,7 +192,7 @@ agentInstructions:
     Prefer the OpenAI-client fixture over eyeballing TUI refusals:
 
     ```bash
-    ! python3 mend-guardrails/tests/malicious_openai_app.py
+    ! mend-guardrails-selftest
     ```
 
     Blocks print HTTP 400 / `guardrail_enforcement_triggered`. Upstream 429

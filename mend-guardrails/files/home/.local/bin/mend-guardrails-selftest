@@ -244,7 +244,7 @@ def main() -> int:
         print(f"FAILED  {fail}/{len(CASES)} cases", file=sys.stderr)
         print(
             "HTTP 500 is an unmapped server-side exception, not a verdict. "
-            "For the traceback run: bash tests/debug-server-run.sh",
+            "Check the mend-guardrails-server output for the traceback.",
             file=sys.stderr,
         )
         return 1

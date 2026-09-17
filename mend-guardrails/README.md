@@ -92,7 +92,7 @@ When enabled you need:
 With the kit running, from a shell in the sandbox (Codex TUI: prefix `!`):
 
 ```text
-! python3 mend-guardrails/tests/malicious_openai_app.py
+! mend-guardrails-selftest
 ```
 
 Expect `PASS` for all cases when policy Block is configured for the relevant
