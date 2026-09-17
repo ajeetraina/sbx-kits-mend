@@ -112,12 +112,12 @@ setup:
             --progress-bar on --timeout 120 --retries 5 \
             -e "${SRC}[server]"
         else
-          echo "pip install mend-guardrails[server]>=0.0.17b0 (PyPI, Mend extra-index, spaCy)"
+          echo "pip install mend-guardrails[server]>=0.0.18b0 (PyPI, Mend extra-index, spaCy)"
           enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["MEND_KEY"], safe=""))')
           python3 -m pip install --break-system-packages \
             --progress-bar on --timeout 120 --retries 5 \
             --extra-index-url "https://mend:${enc}@downloads.mend.io/guardrails/" \
-            'mend-guardrails[server]>=0.0.17b0'
+            'mend-guardrails[server]>=0.0.18b0'
         fi
       description: pip install mend-guardrails[server]
     - command: |

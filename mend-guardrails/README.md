@@ -68,7 +68,7 @@ Git: `#dir=mend-guardrails`. OCI: `docker.io/ajeetraina777/mend-guardrails-kit`
 (pin by digest).
 
 Python **3.11+** is required (upstream package). Default install requires
-`mend-guardrails[server]>=0.0.17b0` from PyPI + Mend downloads. Override with
+`mend-guardrails[server]>=0.0.18b0` from PyPI + Mend downloads. Override with
 `pythonSrc` for a mounted checkout. `MEND_KEY` must be set at install time
 (`sbx run -e`).
 First `sbx run --kit` can take several minutes while wheels and models
