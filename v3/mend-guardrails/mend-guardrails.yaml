@@ -1,0 +1,236 @@
+# syntax=docker/sandbox-kit:3
+# yaml-language-server: $schema=https://raw.githubusercontent.com/docker/sandbox-kit-spec/main/schema/kit.schema.json
+#
+# Mend Guardrails as a Kit v3 mixin — the same declarations as the v2
+# ../../mend-guardrails/spec.yaml, expressed as typed capabilities.
+#
+# Runs mend-guardrails-server on loopback and points Codex / OpenAI-compatible
+# agents at it via OPENAI_BASE_URL so prompt bodies are inspected (secrets, PII,
+# prompt injection) before they reach the model. Also exposes /v1/guard/* and
+# mend-guard-text for scanning MCP and tool-result text.
+#
+# The v2 mixin and this v3 mixin both stay published: a v3 mixin only composes
+# onto v3 workloads and the v2 mixin only onto v2 agents. Keep the two saying
+# the same thing (hosts, env, helper scripts, policy, agent instructions).
+#
+# As a mixin there is NO ENTRYPOINT: the base workload's launch command stays,
+# the guardrails server comes up via the startup hook, and the user runs the
+# agent/tools from the shell. Compose onto Codex (or another OpenAI-compatible
+# shell workload).
+schemaVersion: "3"
+kind: mixin
+displayName: Mend Guardrails
+description: >-
+  Runs mend-guardrails-server on loopback and points Codex/OpenAI-compatible
+  agents at it via OPENAI_BASE_URL so prompt bodies are inspected (secrets, PII,
+  prompt injection) before they reach the model. Also exposes /v1/guard/* and
+  mend-guard-text for scanning MCP and tool-result text.
+sourceUrl: https://github.com/ajeetraina/sbx-kits-mend
+licenses: [Apache-2.0]
+
+# MIGRATION NOTE (v2 → v3): the v2 kit set no version:, sourceUrl: or provides:.
+# version: names the artifact's own version (and would be the fallback for any
+# unversioned provide); it is added here because its absence only shows once the
+# kit is in a registry. No provides: — the install hook pins the server to a
+# FLOOR (mend-guardrails[server]>=0.0.18b0), not an exact version, so the mixin
+# cannot honestly offer <tool>@<version>; a beta floor is not version-shaped and
+# the honest answer is to offer nothing matchable (§9.2 publishes a kit with no
+# provides happily).
+version: "1.0.0"
+
+# v2 requires: {agent: codex} → the closed-set name list. Codex / OpenAI-
+# compatible agents. Drop this to compose onto another OpenAI-compatible agent.
+requires: ["codex"]
+
+# Kit args are not secrets. Pass MEND_KEY with `sbx run -e`, never as a kit arg.
+#
+# MIGRATION NOTE: in v2 these three arg values were interpolated into
+# environment.variables (MEND_GUARDRAILS_*). v3 moves static env into the recipe
+# ENV, which cannot take a create-time arg — so each create-resolved arg now
+# carries an `env:` that exports it to the container under the same name the v2
+# env var used. pythonSrc stays a plain arg: it is referenced only inside an
+# install-hook command, where ${{ kit.args.pythonSrc }} expands into the
+# descriptor at create.
+args:
+  offline:
+    description: >-
+      Set MEND_GUARDRAILS_OFFLINE. Default false (online: platform registration
+      and telemetry). Use true with policySource=local so the SDK can load the
+      kit sandbox.json. MEND_KEY is still required. Do not combine with
+      policySource=api.
+    default: "false"
+    enum: ["false", "true"]
+    env: MEND_GUARDRAILS_OFFLINE
+  policySource:
+    description: >-
+      Default api loads the org policy from the Mend Platform (use with
+      offline=false). Enable detectors in the platform policy as needed. Opt in
+      to local for the kit sandbox.json file (startup then sets offline=true).
+    default: api
+    enum: [local, api]
+    env: MEND_GUARDRAILS_POLICY_SOURCE
+  interceptTui:
+    description: >-
+      Opt in to route Codex TUI model calls through loopback Guardrails
+      (user-level model_provider=mend_guardrails). Default false keeps
+      ChatGPT subscription TUI auth. When true, requires a host OpenAI
+      platform API key with api.responses.write (and billing), plus an API
+      model name (not Sol/Luna-only ChatGPT catalog).
+    default: "false"
+    enum: ["false", "true"]
+    env: MEND_GUARDRAILS_INTERCEPT_TUI
+  pythonSrc:
+    description: >-
+      Absolute path to a local mend-guardrails-python checkout for editable
+      install instead of the Mend downloads wheel. Empty (default) installs
+      from PyPI + downloads.mend.io. Mount the same path as an extra sbx
+      workspace (not :ro) so install can write egg-info, e.g.
+      sbx run ... --kit-arg mend-guardrails.pythonSrc="$SRC" . "$SRC".
+    default: ""
+
+# Pass real MEND_KEY via sbx -e; do not put secrets in kit args.
+#
+# MIGRATION NOTE: no credential@1 is declared, on purpose — the same decision
+# the v2 kit documented. Declaring an apiKey inject on *.mend.io would make the
+# sbx proxy TLS-intercept those hosts to add an Authorization header, which
+# breaks Mend CLI login when stacking with mend-ai-security. MEND_KEY is a plain
+# secret the hooks read (listed in their env:), not a proxy-injected credential.
+# The OpenAI upstream (api.openai.com) key is the composed Codex workload's
+# proxy-managed credential, not this mixin's — which is also why api.openai.com
+# is not in the runtime allow-list below.
+
+capabilities:
+  # v2 permissions.network.allow (one flat list) → network-policy@1, host-only
+  # rules so @1 (not @2). v3 is phase-scoped: install hooks and the running
+  # server/agent get separate allow-lists, and an absent phase grants nothing.
+  # The union of the two phases equals the v2 list — no host is lost.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      # Reached by the install hooks: pip pulls mend-guardrails[server] from
+      # PyPI and the Mend downloads extra-index, plus spaCy/transitive deps
+      # from GitHub release assets. This grant closes before the agent starts.
+      install:
+        allow:
+          - pypi.org
+          - files.pythonhosted.org
+          - "*.mend.io"
+          - mend.io
+          - github.com
+          - objects.githubusercontent.com
+          - release-assets.githubusercontent.com
+      # Reached at steady state: the running server registers with the Mend
+      # platform and sends telemetry (online mode). The startup hook runs in
+      # this phase too. api.openai.com is intentionally absent — the composed
+      # OpenAI-compatible workload owns that egress and its key injection.
+      runtime:
+        allow:
+          - "*.mend.io"
+          - mend.io
+
+  # v2 agentInstructions.content → agent-context@1. The body moved verbatim into
+  # mend-guardrails-context.md (it interpolates no kit args, so a staged
+  # contentFile is correct). No filename: — that is workload-only; a mixin
+  # carries contentFile alone.
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      contentFile: ./mend-guardrails-context.md
+
+  # v2 setup.install + setup.startup → lifecycle@1 (one singleton entry).
+  #
+  # MIGRATION NOTE: the v2 kit shipped its helper scripts, agent-env.sh and the
+  # sandbox.json policy through the sbx-kits-contrib files/home/ convention, and
+  # an install hook then chmod'd them +x. v3 has no such convention — that
+  # content now rides in the overlay (see mend-guardrails.dockerfile, already
+  # executable), so the chmod step is gone. What stays a create-time hook:
+  #   * the pip install — it lands in the COMPOSED base's system Python and
+  #     needs MEND_KEY, both only knowable at create (an overlay would bake onto
+  #     an unknown base where the Python/site-packages path differs);
+  #   * the Codex config + shell-rc wiring — it MERGES into files the base also
+  #     writes (~/.profile, ~/.bashrc, ~/.zshrc, user-level ~/.codex/config.toml),
+  #     and a layer replaces rather than appends.
+  # Hook environments are deny-by-default, so every $VAR a hook (or its children:
+  # pip, the configure-codex python, the server) reads is declared in env:.
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - command: |
+            set -euo pipefail
+            if ! command -v python3 >/dev/null 2>&1; then
+              echo "mend-guardrails kit requires python3 >= 3.11" >&2
+              exit 1
+            fi
+            python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
+              || { echo "mend-guardrails kit requires python3 >= 3.11" >&2; exit 1; }
+          description: Check python3 >= 3.11
+        - command: |
+            set -euo pipefail
+            if [ -z "${MEND_KEY:-}" ]; then
+              echo "mend-guardrails kit requires MEND_KEY (sbx run -e)" >&2
+              exit 1
+            fi
+            SRC='${{ kit.args.pythonSrc }}'
+            if [ -n "$SRC" ]; then
+              if [ ! -d "$SRC" ] || [ ! -f "$SRC/pyproject.toml" ]; then
+                echo "mend-guardrails: pythonSrc='$SRC' must be a mounted checkout with pyproject.toml" >&2
+                echo "mend-guardrails: pass it as an extra sbx workspace (not :ro), e.g." >&2
+                echo "  sbx run ... --kit-arg mend-guardrails.pythonSrc=\"\$SRC\" . \"\$SRC\"" >&2
+                exit 1
+              fi
+              echo "pip install -e ${SRC}[server] (local source; deps from PyPI/GitHub)"
+              python3 -m pip install --break-system-packages \
+                --progress-bar on --timeout 120 --retries 5 \
+                -e "${SRC}[server]"
+            else
+              echo "pip install mend-guardrails[server]>=0.0.18b0 (PyPI, Mend extra-index, spaCy)"
+              enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["MEND_KEY"], safe=""))')
+              python3 -m pip install --break-system-packages \
+                --progress-bar on --timeout 120 --retries 5 \
+                --extra-index-url "https://mend:${enc}@downloads.mend.io/guardrails/" \
+                'mend-guardrails[server]>=0.0.18b0'
+            fi
+          # MEND_KEY: the downloads extra-index credential (read here, not
+          # proxy-injected). HTTP_PROXY/HTTPS_PROXY: pip fetches through the
+          # sandbox's forced proxy, deny-by-default hides them otherwise.
+          env: [MEND_KEY, HTTP_PROXY, HTTPS_PROXY]
+          description: pip install mend-guardrails[server]
+        - command: |
+            set -euo pipefail
+            # Helper scripts ship executable in the overlay, so no chmod here.
+            # Codex TUI uses Responses API; provider URL must be user-level
+            # $CODEX_HOME/config.toml (project .codex ignores openai_base_url).
+            /home/agent/.local/bin/mend-guardrails-configure-codex
+            AGENT_ENV=/home/agent/.mend-guardrails/agent-env.sh
+            for rc in /home/agent/.profile /home/agent/.bashrc /home/agent/.zshrc; do
+              touch "$rc"
+              grep -q 'mend-guardrails/agent-env.sh' "$rc" 2>/dev/null || \
+                printf '\n# Mend Guardrails\n. %s\n' \
+                  "$AGENT_ENV" >> "$rc"
+            done
+            command -v mend-guardrails-server
+          # configure-codex reads MEND_GUARDRAILS_INTERCEPT_TUI and CODEX_HOME.
+          env: [MEND_GUARDRAILS_INTERCEPT_TUI, CODEX_HOME]
+          description: Codex config + shell rc hooks
+      startup:
+        - command: ["/home/agent/.local/bin/mend-guardrails-sandbox-start"]
+          background: true
+          # The server + configure-codex child read the full MEND_GUARDRAILS_*
+          # set, MEND_KEY (and the MEND_GUARDRAILS_KEY alias), the OpenAI
+          # sentinel, the Codex home, and the proxy vars. Deny-by-default means
+          # each must be listed even though some arrive via ENV or arg env:.
+          env:
+            - MEND_KEY
+            - MEND_GUARDRAILS_KEY
+            - MEND_GUARDRAILS_OFFLINE
+            - MEND_GUARDRAILS_POLICY_SOURCE
+            - MEND_GUARDRAILS_INTERCEPT_TUI
+            - MEND_GUARDRAILS_POLICY_DIR
+            - MEND_GUARDRAILS_DEFAULT_CONFIG_ID
+            - MEND_GUARDRAILS_INSTANCE_NAME
+            - CODEX_HOME
+            - OPENAI_API_KEY
+            - OPENAI_BASE_URL
+            - HTTP_PROXY
+            - HTTPS_PROXY
+            - NO_PROXY
+            - no_proxy
+          description: Start mend-guardrails-server on 127.0.0.1:8787

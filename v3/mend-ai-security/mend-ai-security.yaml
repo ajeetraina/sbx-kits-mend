@@ -1,0 +1,81 @@
+# syntax=docker/sandbox-kit:3
+# yaml-language-server: $schema=https://raw.githubusercontent.com/docker/sandbox-kit-spec/main/schema/kit.schema.json
+#
+# Mend AI Security as a Kit v3 mixin — the same declarations as the v2
+# ../../mend-ai-security/spec.yaml, expressed as typed capabilities.
+#
+# Adds the Mend CLI with AI-security scanning to the sandbox: discover AI models,
+# frameworks and system prompts in the workspace and generate an AI-BOM via
+# `mend ai scan`. Works on any agent.
+#
+# The v2 mixin and this v3 mixin both stay published: a v3 mixin only composes
+# onto v3 workloads and the v2 mixin only onto v2 agents.
+#
+# As a mixin there is NO ENTRYPOINT: the base workload's launch command stays
+# and the user runs `mend` from the shell. Compose onto any shell/agent workload.
+schemaVersion: "3"
+kind: mixin
+displayName: Mend AI Security
+description: >-
+  Adds the Mend CLI with AI-security scanning to the sandbox: discover AI models,
+  frameworks, and system prompts in the workspace and generate an AI-BOM
+  (AI Bill of Materials) via `mend ai scan`.
+sourceUrl: https://github.com/ajeetraina/sbx-kits-mend
+licenses: [Apache-2.0]
+
+# MIGRATION NOTE (v2 → v3): the v2 kit set no version:, sourceUrl: or provides:.
+# version: names the artifact's own version; added here because its absence only
+# shows once the kit is in a registry. No provides: — the CLI is fetched from a
+# mutable latest/ download path (downloads.mend.io/cli/<arch>/mend) with no
+# version in the URL, so the kit cannot honestly pin <tool>@<version>; the honest
+# answer is to offer nothing matchable (§9.2 allows a kit with no provides).
+version: "1.0.0"
+
+# MIGRATION NOTE: v2 declared no requires: (not even an agent affinity) — it
+# composes onto any workload. Nothing is added: the CLI is a self-contained
+# native binary shipped in the overlay, so the kit needs nothing beyond the §12
+# platform floor at runtime.
+
+# MIGRATION NOTE: no credential@1 is declared, on purpose — the decision the v2
+# kit documented at length. The Mend CLI performs its own login handshake
+# (email + user key -> token in ~/.mend/config/settings.json). Declaring an
+# apiKey inject on *.mend.io would make the sbx proxy TLS-intercept those hosts
+# to add an Authorization header, which corrupts the CLI login and yields
+# "Unauthorized" inside the sandbox. The kit only opens egress and lets the CLI
+# authenticate itself — see the Authentication section in the agent context.
+#
+# No MEND_URL default is set, for the same reason v2 left it unset: the CLI
+# treats the mere presence of MEND_URL (without MEND_EMAIL + MEND_USER_KEY) as an
+# incomplete env-var auth attempt and then refuses a stored `mend auth login`
+# session. `mend auth login` lets you pick the region interactively.
+
+capabilities:
+  # v2 permissions.network.allow → network-policy@1 (host-only rules, so @1).
+  #
+  # MIGRATION NOTE: v2 had one flat list reached at both install (CLI download)
+  # and runtime (platform scans). v3 splits by phase. The CLI download moved
+  # into the overlay (see the recipe), so the INSTALL phase has no network need
+  # at create and is omitted entirely — the download now happens at build. Only
+  # the RUNTIME grant remains: the CLI talks to saas/api/app under *.mend.io.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - "*.mend.io"            # downloads / saas / api-saas / app / saas-eu (single label)
+          - mend.io                # apex
+
+  # v2 agentInstructions.content → agent-context@1. The body moved verbatim into
+  # mend-ai-security-context.md (no kit-arg interpolation, so a staged
+  # contentFile is correct). No filename: — workload-only; a mixin carries
+  # contentFile alone.
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      contentFile: ./mend-ai-security-context.md
+
+  # MIGRATION NOTE: no lifecycle@1. The v2 kit's only hook was the arch-matched
+  # CLI download, which is a pinned-per-build native binary with no create-time
+  # input — exactly the case the migration guidance says to move into a layer.
+  # It now rides in the overlay (mend-ai-security.dockerfile), which removes the
+  # per-create download latency AND the install-phase network grant. The v2 hook
+  # was guarded (no-op if the base already had `mend`); the overlay instead ships
+  # the kit's own pinned build unconditionally, which is the intended content.

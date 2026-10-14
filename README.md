@@ -63,6 +63,34 @@ sbx run codex \
 Full Guardrails usage (policy modes, TUI intercept, verification): see the
 [mend-guardrails README](./mend-guardrails/README.md).
 
+## Kits v3 (schemaVersion 3)
+
+The kits above are the original **v2** `spec.yaml` mixins. A **v3** rewrite of
+both lives under [`v3/`](./v3/), expressed as the typed-capability
+[Kit v3 descriptor](https://github.com/docker/sandbox-kit-spec):
+
+| v2 (spec.yaml) | v3 descriptor |
+|---|---|
+| [`mend-ai-security/`](./mend-ai-security/) | [`v3/mend-ai-security/`](./v3/mend-ai-security/) |
+| [`mend-guardrails/`](./mend-guardrails/) | [`v3/mend-guardrails/`](./v3/mend-guardrails/) |
+
+Both schemas stay published — **a v3 mixin only composes onto v3 workloads and a
+v2 mixin only onto v2 agents**, so nothing existing breaks. A v3 kit is an
+ordinary OCI image: `docker buildx` reads the descriptor's
+`# syntax=docker/sandbox-kit:3` line, validates it, builds the overlay and
+attaches the descriptor to the manifest.
+
+Build/validate locally (no push), or compose onto a v3 shell workload:
+
+```bash
+PUSH=0 ./scripts/push-kits-v3.sh                              # build both into OCI layouts
+sbx run docker/sbx-kit-shell:1.0.0 --kit ./v3/mend-ai-security .
+```
+
+Publishing (both `:latest` and a `:<version>` pin) is `scripts/push-kits-v3.sh`,
+run by the [Publish Kits (v3)](./.github/workflows/push-kits-v3.yaml) workflow on
+manual dispatch.
+
 ## License
 
 Apache-2.0. "Mend", the Mend CLI, and Mend Guardrails are products of Mend.io; these kits only install and configure them inside a sandbox.
