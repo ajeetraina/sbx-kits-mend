@@ -1,6 +1,6 @@
 # Mend CLI credential design — findings & resolution
 
-Status: **resolved**. The kit ships **no proxy-managed credential** — it only
+The kit ships **no proxy-managed credential** — it only
 opens egress to `*.mend.io` and lets the Mend CLI authenticate itself.
 
 ## Resolution (what shipped)
