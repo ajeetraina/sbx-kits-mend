@@ -1,17 +1,25 @@
 # How Mend credentials work in this kit
 
 The sandbox has a feature that can hide credentials from the code running inside
-it (the "secret manager" / proxy). We tried to use it for Mend, but it doesn't
-work for two reasons:
+it (the "secret manager" / proxy). We tried to use it for Mend, but it can't
+work for one fundamental reason:
 
-1. **It can't reach Mend's key.** The feature only hides keys that ride on the
-   *outside* of a network request (the header). Mend sends its key on the
-   *inside* (the request body), where the feature can't touch it. So Mend never
-   sees the real key and login fails.
+**It can't reach Mend's key.** The feature only substitutes credentials that ride
+on the *outside* of a network request (the header). Mend sends its key on the
+*inside* (the request body), where the feature never touches it. So the real key
+never reaches Mend and login fails.
 
-2. **Turning it on actually breaks login.** To do its job, the feature has to
-   intercept Mend's traffic and that interference alone makes Mend reject us,
-   even with correct credentials. The same key works fine outside the sandbox.
+We proved this live (see [the test matrix](#we-verified-this-live) below). The
+sandbox proxy **does** intercept Mend's traffic and even holds the correct key,
+but because it only swaps **headers**, what Mend reads from the **body** is still
+the placeholder, so auth is rejected. Hand the *same* key to the *same* intercepted
+sandbox via `-e` (which lands it in the body) and login succeeds. So the
+interception itself is fine: **header-only substitution is the sole blocker.**
+
+> Note: an earlier version of this doc also claimed the proxy's TLS interception
+> "breaks Mend's login handshake." Live testing **disproved** that. The `mend`
+> CLI trusts the Docker Sandboxes proxy CA and authenticates right through the
+> MITM; the only thing that fails is header-vs-body. Corrected below.
 
 So we pass the key directly with `-e`, which works today. The only trade-off is
 that the key is readable inside the sandbox which is fine, since the sandbox is
@@ -25,9 +33,11 @@ in the request body.
 ![Mend credential flow: why we use -e instead of the secret manager](../assets/credential-flow.svg)
 
 Top to bottom: the secret manager works for a normal service (it swaps the key
-into the request **header**); the same approach fails for Mend two ways (Mend's
-key is in the **body**, and the proxy's interception breaks the login handshake);
-so we pass the key with `-e` and let Mend log itself in. Source:
+into the request **header**); the same approach fails for Mend because Mend reads
+its key from the request **body**, which the header swap never touches; so we pass
+the key with `-e` and let Mend log itself in. (The proxy's TLS interception is
+*not* the problem — auth succeeds through the same MITM when the key rides in the
+body. Verified live.) Source:
 [`credential-flow.mmd`](../assets/credential-flow.mmd).
 
 ## How to run it (works today)
@@ -94,11 +104,17 @@ Confirmed empirically: all four env vars set correctly still failed when the
 `sbx secret set-custom` has the same limit — its help says it replaces the
 placeholder *"in the request headers"*, so it can't swap a body value either.
 
-On top of that, declaring `apiKey.inject` on `*.mend.io` makes the proxy
-**TLS-intercept** those hosts. That interception mangles Mend's login handshake
-and returns `Unauthorized` *inside* the sandbox, while the same credentials
-succeed on the host (no proxy in the path). So we removed the `credentials:`
-block entirely.
+Declaring `apiKey.inject` on `*.mend.io` (or targeting those hosts with
+`set-custom`) does make the proxy **TLS-intercept** them: it presents its own
+`Docker Sandboxes Proxy CA` certificate instead of Mend's. **But that interception
+does not break anything** — the `mend` CLI (like `curl`) trusts the proxy CA, the
+TLS handshake completes, and auth proceeds normally. The *only* failure is that
+the header swap misses the body. We confirmed this directly: with the proxy
+holding the correct key and intercepting `*.mend.io`, auth **fails** when the key
+is delivered via the header swap (placeholder in env) and **succeeds** when the
+same key is delivered via `-e` (real key in env → body) — same sandbox, same MITM.
+So we removed the `credentials:` block: it adds interception that can never deliver
+the credential, with no upside.
 
 ### What works and what doesn't
 
@@ -108,6 +124,43 @@ block entirely.
 | **OAuth device login** (`mend auth login`) | ✅ yes (SSO orgs) | Interactive browser approval; not automatable |
 | `apiKey` header inject | ❌ no | header ≠ body |
 | `set-custom` placeholder | ❌ no | header-only |
+
+---
+
+## We verified this live
+
+Tested on macOS host + `sbx` v0.48.0, kit built from `./mend-ai-security`, Mend CLI
+v26.9.2-hf1 in-sandbox, using a dedicated Mend **Service User** (bypasses SSO).
+The probe is `mend auth info` (authenticates without needing scan permissions).
+
+| # | Sandbox config | How the key is delivered | Result |
+|---|---|---|---|
+| 1 | Clean (proxy passthrough — real Mend cert) | `-e` → env → request **body** | ✅ `Logged in as sbx-cred-test` |
+| 2b | **MITM active** (`set-custom` on `*.mend.io`, proxy CA cert) | `-e` → env → request **body** | ✅ `Logged in as sbx-cred-test` |
+| 2a | **MITM active**, proxy holds the *correct* key | **secret-injection** → placeholder in env, proxy swaps it into the **header** | ❌ `the specified Mend credentials are invalid` |
+
+The decisive comparison is **2b vs 2a**: identical sandbox, identical active MITM,
+the proxy holding the identical real key. The *only* difference is where the
+credential lands — body (`-e`) succeeds, header (secret-injection) fails. That
+isolates the cause to header-vs-body and rules out the TLS interception as the
+culprit.
+
+Supporting observations:
+
+- **Passthrough vs MITM, by certificate.** As shipped (no secret targeting
+  `*.mend.io`), `curl -v https://api-saas.mend.io` shows Mend's real cert
+  (`issuer: Amazon RSA 2048 M01`). Add a `set-custom` secret for `*.mend.io` and
+  the same request shows `issuer: O=Docker Sandboxes; CN=Docker Sandboxes Proxy CA`
+  — proof the proxy flips from CONNECT passthrough to TLS interception when a
+  secret targets the host.
+- **Interception doesn't break the handshake.** Under that MITM, both `curl` and
+  `mend connectivity` report every `*.mend.io` host reachable, and `SSL certificate
+  verified via OpenSSL` — the proxy CA is trusted inside the sandbox.
+- **`set-custom` help (v0.48.0)** states it replaces the placeholder *"in the
+  request headers"* — matching the observed header-only behavior.
+- **Side note (not a credential issue):** the Service User authenticated fine but
+  `mend ai scan` returned `403 Access is denied` on project creation — a Mend RBAC
+  matter (associate the Service User with a group/role), unrelated to delivery.
 
 ---
 
@@ -177,3 +230,51 @@ MEND_DEBUG_AUTH=true mend ai scan --directory . 2>&1 | grep -iE 'POST|host|heade
 Those outputs pin down the token endpoint, whether the key goes in a header or
 body, the response field names, and the `settings.json` shape — i.e. every
 `‹CONFIRM›` above.
+
+---
+
+## Appendix — proposed upstream improvement for `sbx`
+
+The limitation above isn't Mend-specific: **any** CLI that authenticates by sending
+its credential in the request **body** (a form/JSON login `POST`) hits the same
+wall, because `sbx` secret substitution is header-only. For those tools the only
+working path today is `-e`, which places the raw key inside the sandbox — defeating
+the "credentials never enter the sandbox" guarantee. The following is a feature
+request we intend to raise with the Docker Sandboxes team.
+
+**Title:** Secret substitution is header-only — body-authenticating CLIs (e.g. Mend)
+can't keep credentials out of the sandbox.
+
+**Summary.** `sbx` substitutes the placeholder for the real secret **in request
+headers** at the proxy. That works for header/API-key auth, but a credential sent
+in the request **body** is never swapped, so `-e` (raw key in the sandbox) is the
+only option. We'd like body-auth tools to keep credentials out of the sandbox too.
+
+**Evidence (same tests as above).** Using a Mend Service User and `mend auth info`:
+
+| # | Sandbox config | Credential delivery | Result |
+|---|---|---|---|
+| 1 | Clean (passthrough) | `-e` → env → **body** | ✅ `Logged in` |
+| 2b | `set-custom` on `*.mend.io` → **MITM active**, proxy holds the real key | `-e` → env → **body** | ✅ `Logged in` |
+| 2a | same MITM, proxy holds the real key | secret-injection → placeholder in env, proxy swaps into **header** | ❌ `credentials invalid` |
+
+2b vs 2a — identical sandbox, identical interception, identical real key in the
+proxy — isolates the cause to header-vs-body. Certificate checks confirm the MITM
+itself works (`curl` and `mend` both trust the `Docker Sandboxes Proxy CA` and
+authenticate through it); header-only substitution is the sole blocker.
+
+**Requested change (any one):**
+
+1. **Body-aware substitution** — let a custom secret declare the placeholder be
+   swapped in the request **body** (JSON path / form field / regex), opt-in per
+   secret, same as today's host-targeted interception.
+2. **A supported pattern** for body-auth CLIs that still keeps the secret out of the
+   sandbox (e.g. a proxy-injected auth-broker sidecar, or a proxy-materialized
+   credential file).
+3. At minimum, **document the header-only limitation** on `secret set-custom` and in
+   the credentials guide so kit authors don't design around a guarantee that doesn't
+   apply to body-auth tools.
+
+**Before filing:** confirm the right repo/channel for `sbx` feature requests, and
+re-run the repro on the latest `sbx` (v0.49.0-rc was available) in case body
+substitution has already landed.
