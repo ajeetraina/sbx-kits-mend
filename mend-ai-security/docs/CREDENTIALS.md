@@ -1,6 +1,6 @@
 # How Mend credentials work in this kit
 
-**Status: resolved.** The kit ships **no proxy-managed credential**. It just opens
+The kit ships **no proxy-managed credential**. It just opens
 network access to `*.mend.io` and lets the Mend CLI log itself in. You pass your
 credentials at run time with `-e`.
 
