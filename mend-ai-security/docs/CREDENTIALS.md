@@ -1,92 +1,127 @@
-# Mend CLI credential design — findings & resolution
+# How Mend credentials work in this kit
 
-The kit ships **no proxy-managed credential** — it only
-opens egress to `*.mend.io` and lets the Mend CLI authenticate itself.
+**Status: resolved.** The kit ships **no proxy-managed credential**. It just opens
+network access to `*.mend.io` and lets the Mend CLI log itself in. You pass your
+credentials at run time with `-e`.
 
-## Resolution (what shipped)
+## The short version
 
-Confirmed by live testing (host vs. sandbox, same credentials):
+The sandbox has a feature that can hide credentials from the code running inside
+it (the "secret manager" / proxy). We tried to use it for Mend, but it doesn't
+work — for two reasons:
 
-- The proxy-managed `apiKey` block **broke** auth. Declaring `apiKey.inject` on
-  `*.mend.io` makes the sbx proxy **TLS-intercept** those hosts to add an
-  `Authorization` header; that mangles Mend's login handshake and returns
-  `Unauthorized` **inside the sandbox**, while the *same* credentials succeed on
-  the **host** (no proxy in the path). → The `credentials:` block was removed.
-- **Working auth inside the sandbox:** `mend auth login` → **"Enter credentials
-  manually"** with a **Service User** email + key. The token is cached in
-  `~/.mend/config/settings.json`. Env vars (`MEND_EMAIL` / `MEND_USER_KEY` /
-  `MEND_ORGANIZATION`) also work when the CLI consumes them via login.
-- **Personal user keys are rejected under SSO** (`Unauthorized`) — Docker's org
-  is SSO-enforced, so a Service User is required.
-- **Browser login does not work headless**: its callback is `http://127.0.0.1:<port>`,
-  which the CLI listens on *inside* the sandbox, but the browser runs on the
-  host — the redirect never reaches the CLI. Use "Enter credentials manually".
+1. **It can't reach Mend's key.** The feature only hides keys that ride on the
+   *outside* of a network request (the header). Mend sends its key on the
+   *inside* (the request body), where the feature can't touch it. So Mend never
+   sees the real key and login fails.
 
-The rest of this document is the investigation trail that led there, kept for
-reference (and in case a future `sbx` gains body-level secret swapping).
+2. **Turning it on actually breaks login.** To do its job, the feature has to
+   intercept Mend's traffic — and that interference alone makes Mend reject us,
+   even with correct credentials. The same key works fine outside the sandbox.
 
-## What the CLI actually does (evidence from the binary, v26.8.2-hf1)
+So we pass the key directly with `-e`, which works today. The only trade-off is
+that the key is readable inside the sandbox — which is fine, since the sandbox is
+already isolated.
 
-`strings` on the installed `mend` binary shows:
+We'll revisit the secret manager if a future `sbx` learns to swap credentials
+in the request body.
+
+## The whole story in one picture
+
+![Mend credential flow: why we use -e instead of the secret manager](../assets/credential-flow.svg)
+
+Top to bottom: the secret manager works for a normal service (it swaps the key
+into the request **header**); the same approach fails for Mend two ways (Mend's
+key is in the **body**, and the proxy's interception breaks the login handshake);
+so we pass the key with `-e` and let Mend log itself in. Source:
+[`credential-flow.mmd`](../assets/credential-flow.mmd).
+
+## How to run it (works today)
+
+```bash
+sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
+  -e MEND_URL="https://saas.mend.io" \
+  -e MEND_EMAIL="you@example.com" \
+  -e MEND_USER_KEY="<user-key>" \
+  -e MEND_ORGANIZATION="<org-uuid>" \
+  ~/path/to/project
+# inside the sandbox:
+mend ai scan --directory .
+```
+
+A few things to know:
+
+- Use a **Service User** email + key, not a personal user key. Personal keys are
+  rejected under SSO (and Docker's org is SSO-enforced).
+- You can also run `mend auth login` → **"Enter credentials manually"** and paste
+  the same Service User email + key. The token gets cached in
+  `~/.mend/config/settings.json`.
+- **Browser login does not work** inside the sandbox. It redirects to
+  `http://127.0.0.1:<port>`, but that port lives inside the sandbox while your
+  browser runs on the host — the redirect never arrives. Use "Enter credentials
+  manually" instead.
+
+---
+
+## Why the secret manager can't help (the details)
+
+Everything below is the investigation trail, kept for reference.
+
+### What the Mend CLI actually does
+
+From `strings` on the installed `mend` binary (v26.8.2-hf1):
 
 | Signal | Value |
 |---|---|
 | User-key login endpoint | `/login/accessToken`, `/apis/v2/login` |
 | SSO / device login | `/login/openId`, `OAuthDeviceCode` |
-| Token / config store | `~/.mend/config/settings.json` (config pkg: `config.Auth` / `AuthGeneral` / `AuthSAST`, base dir `MEND_BASE_DIR`) |
-| Token response shape | custom — only `token_type` is a standard OAuth field (no `access_token` / `refresh_token` / `expires_in`) |
+| Token / config store | `~/.mend/config/settings.json` |
+| Token response shape | custom — only `token_type` is standard OAuth (no `access_token` / `refresh_token` / `expires_in`) |
 | Auth env vars | `MEND_URL`, `MEND_EMAIL`, `MEND_USER_KEY`, `MEND_ORGANIZATION` (+ `MEND_SAST_*` for `mend code`) |
 | Debug switch | `MEND_DEBUG_AUTH=true` (prints the auth request/response) |
 
-Two conclusions:
+Two takeaways:
 
-1. Mend authenticates with a **login handshake** — it POSTs email + user key to
+1. Mend logs in with a **handshake**: it POSTs email + user key to
    `/login/accessToken` and gets back a token it stores in `settings.json`. The
-   key travels in the **request body**, not an `Authorization` header.
+   key travels in the **request body**, not in an `Authorization` header.
 2. SSO orgs (e.g. `@docker.com`) use the **OpenID device-code flow**
    (`mend auth login` → browser approval), not a static user key.
 
-## Why the shipped credential block is likely ineffective
+### Why the proxy / secret manager fails
 
-`spec.yaml` currently declares:
+The sandbox's secret feature works by intercepting outbound traffic and swapping
+the real value into the **request header** (e.g. `Authorization: Bearer <key>`).
+That's the "outside of the envelope" — and Mend never reads it, because its key
+is in the body. The placeholder reaches Mend unswapped, and login fails.
+Confirmed empirically: all four env vars set correctly still failed when the
+`apiKey` block was declared.
 
-```yaml
-credentials:
-  - service: mend
-    apiKey:
-      name: MEND_USER_KEY
-      inject:
-        - { domain: saas.mend.io, scheme: bearer }
-        - { domain: api-saas.mend.io, scheme: bearer }
-```
+`sbx secret set-custom` has the same limit — its help says it replaces the
+placeholder *"in the request headers"*, so it can't swap a body value either.
 
-`apiKey` injection adds an `Authorization: Bearer <key>` **header** on egress.
-But Mend doesn't read a bearer header — it sends the user key in the login POST
-**body**. So the proxy-managed header is ignored and the container's
-`MEND_USER_KEY=proxy-managed` sentinel reaches Mend unswapped → "authenticate
-first". Confirmed empirically: all four env vars set correctly still fail.
+On top of that, declaring `apiKey.inject` on `*.mend.io` makes the proxy
+**TLS-intercept** those hosts. That interception mangles Mend's login handshake
+and returns `Unauthorized` *inside* the sandbox, while the same credentials
+succeed on the host (no proxy in the path). So we removed the `credentials:`
+block entirely.
 
-`sbx secret set-custom` has the same limitation — its help states it replaces
-the placeholder **"in the request headers"**, so it cannot swap a value carried
-in the body either.
+### What works and what doesn't
 
-## Delivery mechanisms and whether they work for Mend
-
-| Mechanism | Works for Mend CLI? | Trade-off |
+| Mechanism | Works for Mend? | Trade-off |
 |---|---|---|
-| **Direct env** (`-e MEND_USER_KEY=<key>`) | ✅ yes (user-key login) | Real key is readable inside the sandbox |
+| **Direct env** (`-e MEND_USER_KEY=<key>`) | ✅ yes | Real key is readable inside the sandbox |
 | **OAuth device login** (`mend auth login`) | ✅ yes (SSO orgs) | Interactive browser approval; not automatable |
-| `apiKey` header inject (shipped) | ❌ no | header ≠ body |
-| `set-custom` placeholder | ❌ no (header-only) | header ≠ body |
-
-**Recommendation:** default the kit to the **direct-env** path (documented,
-with the in-container-key caveat), and support **OAuth device login** for SSO
-orgs. Only revisit a proxy-managed static credential if Mend adds header-based
-auth or a body-swap lands in `sbx`.
+| `apiKey` header inject | ❌ no | header ≠ body |
+| `set-custom` placeholder | ❌ no | header-only |
 
 ---
 
-## Draft A — `oauth:` block (SSO device-login flow)
+## If `sbx` ever supports body-level secrets
+
+Two drafts kept on hand for that day.
+
+### Draft A — `oauth:` block (SSO device-login flow)
 
 Fill every `‹CONFIRM›` from a completed login before wiring this in.
 
@@ -119,15 +154,15 @@ permissions:
     allow: ["*.mend.io", mend.io, saas.mend.io, api-saas.mend.io]
 ```
 
-Caveat: the initial device approval is interactive, so even with this block the
-first `mend auth login` needs a human. The block only lets the proxy manage the
-stored tokens/refresh after that.
+Caveat: the first device approval is interactive, so even with this block the
+initial `mend auth login` needs a human. The block only lets the proxy manage the
+stored tokens/refresh afterward.
 
-## Draft B — `set-custom` recipe (header-swap; **only if** Mend uses a header)
+### Draft B — `set-custom` recipe (header-swap; only if Mend ever uses a header)
 
-Included for completeness. This is a **runtime command**, not a spec change, and
-only works if `MEND_DEBUG_AUTH` shows the key going out in a **header** (per the
-binary it goes in the body, so expect this NOT to work — confirm first):
+Kept for completeness. This is a **runtime command**, not a spec change, and only
+works if `MEND_DEBUG_AUTH` shows the key going out in a **header** (per the binary
+it goes in the body, so expect this NOT to work — confirm first):
 
 ```bash
 sbx secret set-custom -g \
@@ -137,24 +172,7 @@ sbx secret set-custom -g \
   --value "$MEND_USER_KEY"
 ```
 
-## Draft C — direct env (works today; recommended default)
-
-No spec change; the real key is passed at run time and read by the CLI's own
-login. The trade-off is that the key is present inside the sandbox.
-
-```bash
-sbx run claude --kit docker.io/ajeetraina777/mend-ai-security-kit:latest \
-  -e MEND_URL="https://saas.mend.io" \
-  -e MEND_EMAIL="you@example.com" \
-  -e MEND_USER_KEY="<user-key>" \
-  -e MEND_ORGANIZATION="<org-uuid>" \
-  ~/path/to/project
-# inside: mend ai scan --directory .
-```
-
----
-
-## To finalize the design, capture from one completed login
+### To finalize either draft, capture from one completed login
 
 ```bash
 mend auth login                                    # complete the browser/device approval
@@ -162,7 +180,6 @@ cat ~/.mend/config/settings.json                   # -> credentialFile.structure
 MEND_DEBUG_AUTH=true mend ai scan --directory . 2>&1 | grep -iE 'POST|host|header|body|token|status' | head
 ```
 
-Those two outputs pin down: the token endpoint host/path, whether the key is in
-a header or body, the response field names, and the `settings.json` shape — i.e.
-every `‹CONFIRM›` above. Once we have them, we pick Draft A (oauth) or Draft C
-(direct-env default) and wire it into `spec.yaml`.
+Those outputs pin down the token endpoint, whether the key goes in a header or
+body, the response field names, and the `settings.json` shape — i.e. every
+`‹CONFIRM›` above.
