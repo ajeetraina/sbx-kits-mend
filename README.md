@@ -15,6 +15,10 @@ The kits use **different secrets**. They are not interchangeable.
 | `MEND_USER_KEY` | AI Security (CLI) | Service User key, with `MEND_EMAIL` (+ `MEND_URL` / `MEND_ORGANIZATION`). Or skip env vars and run `mend auth login` inside the sandbox. |
 
 Do **not** put either secret in `--kit-arg`. Pass them with `sbx run -e`.
+`--kit-arg` values are kit *configuration*: they get baked into the kit layer and
+surface in image layers, build cache, logs, and `sbx inspect` — so a secret there
+is persisted and visible. `-e` injects values only into the running sandbox at
+runtime, never into a stored artifact. Keep `--kit-arg` for non-secret toggles.
 
 Compose them on Codex (`MEND_KEY` once for Guardrails; CLI can still log in inside the VM):
 

@@ -25,7 +25,9 @@ policy on MCP or tool-result text.
   [Integrations → Mend AI Guardrails](https://docs.mend.io/platform/latest/mend-ai-runtime-protection#MendAIRuntimeProtection-InstallMendAIGuardrails)
 
 `MEND_KEY` is **not** the Mend CLI Service User key (`MEND_USER_KEY`). Pass it
-with `sbx run -e`. Do not put secrets in `--kit-arg`.
+with `sbx run -e`. Do not put secrets in `--kit-arg` — kit-args are baked into the
+kit layer and surface in image layers, build cache, logs, and `sbx inspect`,
+whereas `-e` injects values only into the running sandbox at runtime.
 
 ## Quick start
 
