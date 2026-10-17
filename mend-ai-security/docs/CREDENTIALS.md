@@ -1,14 +1,8 @@
 # How Mend credentials work in this kit
 
-The kit ships **no proxy-managed credential**. It just opens
-network access to `*.mend.io` and lets the Mend CLI log itself in. You pass your
-credentials at run time with `-e`.
-
-## The short version
-
 The sandbox has a feature that can hide credentials from the code running inside
 it (the "secret manager" / proxy). We tried to use it for Mend, but it doesn't
-work — for two reasons:
+work for two reasons:
 
 1. **It can't reach Mend's key.** The feature only hides keys that ride on the
    *outside* of a network request (the header). Mend sends its key on the
@@ -16,11 +10,11 @@ work — for two reasons:
    sees the real key and login fails.
 
 2. **Turning it on actually breaks login.** To do its job, the feature has to
-   intercept Mend's traffic — and that interference alone makes Mend reject us,
+   intercept Mend's traffic and that interference alone makes Mend reject us,
    even with correct credentials. The same key works fine outside the sandbox.
 
 So we pass the key directly with `-e`, which works today. The only trade-off is
-that the key is readable inside the sandbox — which is fine, since the sandbox is
+that the key is readable inside the sandbox which is fine, since the sandbox is
 already isolated.
 
 We'll revisit the secret manager if a future `sbx` learns to swap credentials
